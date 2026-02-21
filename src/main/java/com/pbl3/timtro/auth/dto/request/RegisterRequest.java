@@ -7,7 +7,7 @@ import lombok.Data;
 
 @Data
 public class RegisterRequest {
-    @NotBlank(message = "Username không được để trống")
+    @NotBlank(message = "Tên đăng nhập không được để trống")
     private String username;
 
     @NotBlank(message = "Mật khẩu không được để trống")
@@ -17,8 +17,6 @@ public class RegisterRequest {
     @Email(message = "Email không hợp lệ")
     @NotBlank(message = "Email không được để trống")
     private String email;
-
-    private String phone;
 
     @NotBlank(message = "Tên hiển thị không được để trống")
     private String displayName;
