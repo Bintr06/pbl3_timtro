@@ -29,14 +29,15 @@ public class AuthService {
                 .hashedPassword(passwordEncoder.encode(request.getPassword()))
                 .email(request.getEmail())
                 .displayName(request.getDisplayName())
-                .role(Role.USER) // Luôn mặc định là USER khi đăng ký qua web
+                .role(Role.USER)
                 .enabled(true)
                 .isVerified(false)
                 .build();
 
-        userRepository.save(user);
+        // QUAN TRỌNG: Gán lại user để lấy id và createdAt từ Database
+        user = userRepository.save(user);
 
-        // 3. Tự động Login sau khi đăng ký thành công (UX tốt hơn)
+        // Lúc này user.getCreatedAt() đã có giá trị (nếu đã bật @EnableJpaAuditing)
         String token = jwtService.generateToken(user);
 
         return AuthResponse.builder()

@@ -1,7 +1,9 @@
 package com.pbl3.timtro.room.service;
 
 import com.pbl3.timtro.common.service.CloudinaryService;
+import com.pbl3.timtro.favorite.repository.FavoriteRepository;
 import com.pbl3.timtro.room.dto.request.RoomRequest;
+import com.pbl3.timtro.room.dto.request.RoomUpdateRequest;
 import com.pbl3.timtro.room.dto.response.RoomResponse;
 import com.pbl3.timtro.room.entity.Amenity;
 import com.pbl3.timtro.room.entity.Room;
@@ -26,6 +28,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final AmenityRepository amenityRepository;
     private final CloudinaryService cloudinaryService;
+    private final FavoriteRepository favoriteRepository;
 
     @Transactional
     public void createRoom(RoomRequest request, List<MultipartFile> files, User owner) {
@@ -44,10 +47,12 @@ public class RoomService {
                 .status(RoomStatus.PENDING)
                 .owner(owner)
                 .build();
+
         if (request.getAmenityIds() != null && !request.getAmenityIds().isEmpty()) {
             Set<Amenity> amenities = new HashSet<>(amenityRepository.findAllById(request.getAmenityIds()));
             room.setAmenities(amenities);
         }
+
         if (files != null && !files.isEmpty()) {
             List<MultipartFile> validFiles = files.stream()
                     .filter(f -> !f.isEmpty())
@@ -67,6 +72,7 @@ public class RoomService {
         }
         roomRepository.save(room);
     }
+
     @Transactional
     public void approveRoom(Long roomId) {
         Room room = roomRepository.findById(roomId)
@@ -76,46 +82,143 @@ public class RoomService {
     }
     public List<RoomResponse> getAllRooms() {
         return roomRepository.findAllWithImagesAndAmenities().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
-    }
-    public List<RoomResponse> searchRooms(String keyword, String district, Double minPrice, Double maxPrice, Double minArea) {
-        return roomRepository.searchRooms(keyword, district, minPrice, maxPrice, minArea)
-                .stream()
-                .map(this::mapToResponse)
+                .distinct()
+                .map(room -> mapToResponse(room, null))
                 .collect(Collectors.toList());
     }
 
-    private RoomResponse mapToResponse(Room room) {
-        String thumbnail = room.getImages().stream()
-                .filter(RoomImage::isPrimary)
-                .map(RoomImage::getImageUrl)
-                .findFirst()
-                .orElse(room.getImages().isEmpty() ? null : room.getImages().get(0).getImageUrl());
+    public List<RoomResponse> searchRooms(String keyword, String district, Double minPrice, Double maxPrice, Double minArea) {
+        return roomRepository.searchRooms(keyword, district, minPrice, maxPrice, minArea)
+                .stream()
+                .distinct()
+                .map(room -> mapToResponse(room, null))
+                .collect(Collectors.toList());
+    }
+    public RoomResponse mapToResponse(Room room, User currentUser) {
+        boolean isFav = false;
+        if (currentUser != null) {
+            isFav = favoriteRepository.existsByUserIdAndRoomId(currentUser.getId(), room.getId());
+        }
 
         return RoomResponse.builder()
                 .id(room.getId())
                 .title(room.getTitle())
+                .description(room.getDescription())
                 .price(room.getPrice())
                 .area(room.getArea())
                 .address(room.getAddress())
+                .province(room.getProvince())
                 .district(room.getDistrict())
+                .ward(room.getWard())
+                .streetDetail(room.getStreetDetail())
+                .latitude(room.getLatitude())
+                .longitude(room.getLongitude())
+                .status(room.getStatus() != null ? room.getStatus().name() : null)
                 .ownerName(room.getOwner() != null ? room.getOwner().getDisplayName() : "N/A")
-                .imageUrls(room.getImages().stream().map(RoomImage::getImageUrl).toList())
-                .amenities(room.getAmenities().stream().map(Amenity::getName).collect(Collectors.toSet()))
+                .ownerPhone(room.getOwner() != null ? room.getOwner().getPhone() : "N/A")
+                .imageUrls(room.getImages().stream()
+                        .map(RoomImage::getImageUrl)
+                        .distinct()
+                        .toList())
+                .amenities(room.getAmenities().stream()
+                        .map(Amenity::getName)
+                        .collect(Collectors.toSet()))
                 .createdAt(room.getCreatedAt())
+                .isFavorite(isFav)
                 .build();
     }
+
     public List<RoomResponse> getRoomsByStatus(RoomStatus status) {
         return roomRepository.findAllByStatus(status).stream()
-                .map(this::mapToResponse)
+                .distinct()
+                .map(room -> mapToResponse(room, null))
                 .collect(Collectors.toList());
     }
+
+    public List<RoomResponse> getMyRooms(User currentUser) {
+        return roomRepository.findAllByOwnerId(currentUser.getId()).stream()
+                .distinct()
+                .map(room -> mapToResponse(room, currentUser))
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public void rejectRoom(Long roomId) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
         room.setStatus(RoomStatus.REJECT);
+        roomRepository.save(room);
+    }
+
+    @Transactional
+    public void deleteRoom(Long roomId, User currentUser) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
+
+        boolean isOwner = room.getOwner().getId().equals(currentUser.getId());
+        boolean isAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isOwner && !isAdmin) {
+            throw new RuntimeException("Bạn không có quyền xóa phòng này!");
+        }
+
+        if (room.getImages() != null) {
+            for (RoomImage img : room.getImages()) {
+                cloudinaryService.deleteFile(img.getImageUrl());
+            }
+        }
+        roomRepository.delete(room);
+    }
+
+    @Transactional
+    public void toggleRentStatus(Long roomId) {
+        Room room = roomRepository.findById(roomId).orElseThrow();
+        if (room.getStatus() == RoomStatus.AVAILABLE) {
+            room.setStatus(RoomStatus.RENTED);
+        } else {
+            room.setStatus(RoomStatus.AVAILABLE);
+        }
+        roomRepository.save(room);
+    }
+
+    @Transactional
+    public void updateRoom(Long roomId, RoomUpdateRequest request, List<MultipartFile> newFiles, User currentUser) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
+
+        if (!room.getOwner().getId().equals(currentUser.getId())) {
+            throw new RuntimeException("Bạn không có quyền sửa phòng này!");
+        }
+
+        room.setTitle(request.getTitle());
+        room.setDescription(request.getDescription());
+        room.setPrice(request.getPrice());
+        room.setArea(request.getArea());
+        room.setAddress(request.getAddress());
+        room.setStatus(RoomStatus.PENDING);
+
+        if (request.getAmenityIds() != null) {
+            Set<Amenity> amenities = new HashSet<>(amenityRepository.findAllById(request.getAmenityIds()));
+            room.setAmenities(amenities);
+        }
+        List<RoomImage> imagesToRemove = room.getImages().stream()
+                .filter(img -> request.getRemainingImageUrls() == null ||
+                        !request.getRemainingImageUrls().contains(img.getImageUrl()))
+                .toList();
+
+        for (RoomImage img : imagesToRemove) {
+            cloudinaryService.deleteFile(img.getImageUrl());
+            room.removeImage(img);
+        }
+        if (newFiles != null && !newFiles.isEmpty()) {
+            for (MultipartFile file : newFiles) {
+                if (!file.isEmpty()) {
+                    String url = cloudinaryService.uploadFile(file, "rooms");
+                    room.addImage(RoomImage.builder().imageUrl(url).primary(false).build());
+                }
+            }
+        }
         roomRepository.save(room);
     }
 }

@@ -27,4 +27,18 @@ public class CloudinaryService {
             throw new RuntimeException("Upload ảnh thất bại: " + e.getMessage());
         }
     }
+    public void deleteFile(String url) {
+        try {
+            String searchKey = "/upload/";
+            int startIndex = url.indexOf(searchKey) + searchKey.length();
+            String remainingUrl = url.substring(startIndex);
+            if (remainingUrl.startsWith("v")) {
+                remainingUrl = remainingUrl.substring(remainingUrl.indexOf("/") + 1);
+            }
+            String publicId = remainingUrl.substring(0, remainingUrl.lastIndexOf("."));
+            cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());
+        } catch (IOException e) {
+            throw new RuntimeException("Xóa ảnh trên Cloudinary thất bại: " + e.getMessage());
+        }
+    }
 }

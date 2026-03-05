@@ -24,7 +24,9 @@ public class RoomResponse {
     private Double longitude;
     private String status;
     private String ownerName;
+    private String ownerPhone;
     private List<String> imageUrls;
     private Set<String> amenities;
     private LocalDateTime createdAt;
+    private boolean isFavorite;
 }

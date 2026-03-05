@@ -45,4 +45,11 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
             "WHERE r.status = :status " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByStatus(@Param("status") RoomStatus status);
+
+    @Query("SELECT DISTINCT r FROM Room r " +
+            "LEFT JOIN FETCH r.images " +
+            "LEFT JOIN FETCH r.amenities " +
+            "WHERE r.owner.id = :ownerId " +
+            "ORDER BY r.createdAt DESC")
+    List<Room> findAllByOwnerId(@Param("ownerId") Long ownerId);
 }

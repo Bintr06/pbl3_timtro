@@ -29,22 +29,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
+        final String authHeader = request.getHeader("Authorization");
+        final String jwt;
+        final String username;
+
+        // 1. Kiểm tra Header
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         try {
-            final String authHeader = request.getHeader("Authorization");
-            final String jwt;
-            final String username;
-
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
             jwt = authHeader.substring(7);
             username = jwtService.extractUsername(jwt);
 
+            // 2. Nếu tìm thấy username và chưa được xác thực trong Context
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
 
+                // 3. Kiểm tra tính hợp lệ của Token
                 if (jwtService.isTokenValid(jwt, userDetails)) {
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
@@ -52,13 +55,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             userDetails.getAuthorities()
                     );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                    // Lưu vào Security Context
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
         } catch (Exception e) {
-            // Nếu Token lỗi hoặc hết hạn, không chặn request ở đây
-            // mà để Spring Security chặn ở tầng SecurityConfig (EntryPoint)
-            // Điều này giúp trả về 401 một cách sạch sẽ hơn.
+            // Log lỗi ra console để debug (Ví dụ: ExpiredJwtException)
+            System.out.println("JWT Authentication failed: " + e.getMessage());
         }
 
         filterChain.doFilter(request, response);

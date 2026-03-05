@@ -2,6 +2,7 @@ package com.pbl3.timtro.room.controller;
 
 import com.pbl3.timtro.common.dto.ApiResponse;
 import com.pbl3.timtro.room.dto.request.RoomRequest;
+import com.pbl3.timtro.room.dto.request.RoomUpdateRequest;
 import com.pbl3.timtro.room.dto.response.RoomResponse;
 import com.pbl3.timtro.room.service.RoomService;
 import com.pbl3.timtro.user.entity.User;
@@ -21,7 +22,6 @@ public class RoomController {
 
     private final RoomService roomService;
 
-    // Đăng tin: Chỉ dành cho chủ trọ (OWNER/HOST)
     @PostMapping(consumes = {"multipart/form-data"})
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<String>> createRoom(
@@ -33,13 +33,11 @@ public class RoomController {
         return ResponseEntity.ok(new ApiResponse<>(200, "Đăng tin thành công!", null));
     }
 
-    // Lấy tất cả: Công khai
     @GetMapping("/public/all")
     public ResponseEntity<ApiResponse<List<RoomResponse>>> getAllRooms() {
         return ResponseEntity.ok(new ApiResponse<>(200, "Success", roomService.getAllRooms()));
     }
 
-    // Tìm kiếm: Công khai
     @GetMapping("/public/search")
     public ResponseEntity<ApiResponse<List<RoomResponse>>> searchRooms(
             @RequestParam(required = false) String keyword,
@@ -50,5 +48,24 @@ public class RoomController {
     ) {
         var result = roomService.searchRooms(keyword, district, minPrice, maxPrice, minArea);
         return ResponseEntity.ok(new ApiResponse<>(200, "Success", result));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteRoom(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        roomService.deleteRoom(id, currentUser);
+        return ResponseEntity.ok("Xóa phòng trọ và toàn bộ ảnh liên quan thành công!");
+    }
+    @PutMapping("/{id}")
+    public ResponseEntity<String> updateRoom(
+            @PathVariable Long id,
+            @RequestPart("request") RoomUpdateRequest request,
+            @RequestPart(value = "files", required = false) List<MultipartFile> files,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        roomService.updateRoom(id, request, files, currentUser);
+        return ResponseEntity.ok("Cập nhật phòng trọ thành công, vui lòng chờ duyệt lại!");
     }
 }

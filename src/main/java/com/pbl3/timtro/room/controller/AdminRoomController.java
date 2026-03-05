@@ -19,7 +19,6 @@ public class AdminRoomController {
     private final RoomService roomService;
     @GetMapping("/pending")
     public ResponseEntity<ApiResponse<List<RoomResponse>>> getPendingRooms() {
-        // Bạn có thể viết thêm query findByStatus(PENDING) trong Repository
         return ResponseEntity.ok(new ApiResponse<>(200, "Success", roomService.getRoomsByStatus(RoomStatus.PENDING)));
     }
     @PatchMapping("/{id}/approve")
