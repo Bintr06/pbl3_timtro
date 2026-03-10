@@ -52,4 +52,6 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
             "WHERE r.owner.id = :ownerId " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByOwnerId(@Param("ownerId") Long ownerId);
+    @Query("SELECT COALESCE(AVG(r.stars), 0.0) FROM Rating r WHERE r.room.id = :roomId")
+    Double getAverageStars(Long roomId);
 }

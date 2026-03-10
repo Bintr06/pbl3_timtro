@@ -2,6 +2,7 @@ package com.pbl3.timtro.room.service;
 
 import com.pbl3.timtro.common.service.CloudinaryService;
 import com.pbl3.timtro.favorite.repository.FavoriteRepository;
+import com.pbl3.timtro.rating.repository.RatingRepository;
 import com.pbl3.timtro.room.dto.request.RoomRequest;
 import com.pbl3.timtro.room.dto.request.RoomUpdateRequest;
 import com.pbl3.timtro.room.dto.response.RoomResponse;
@@ -16,6 +17,8 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.HashSet;
 import java.util.List;
@@ -29,6 +32,7 @@ public class RoomService {
     private final AmenityRepository amenityRepository;
     private final CloudinaryService cloudinaryService;
     private final FavoriteRepository favoriteRepository;
+    private final RatingRepository ratingRepository;
 
     @Transactional
     public void createRoom(RoomRequest request, List<MultipartFile> files, User owner) {
@@ -72,7 +76,13 @@ public class RoomService {
         }
         roomRepository.save(room);
     }
-
+    private User getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof User) {
+            return (User) authentication.getPrincipal();
+        }
+        return null;
+    }
     @Transactional
     public void approveRoom(Long roomId) {
         Room room = roomRepository.findById(roomId)
@@ -81,17 +91,19 @@ public class RoomService {
         roomRepository.save(room);
     }
     public List<RoomResponse> getAllRooms() {
+        User currentUser = getCurrentUser();
         return roomRepository.findAllWithImagesAndAmenities().stream()
                 .distinct()
-                .map(room -> mapToResponse(room, null))
+                .map(room -> mapToResponse(room, currentUser))
                 .collect(Collectors.toList());
     }
 
     public List<RoomResponse> searchRooms(String keyword, String district, Double minPrice, Double maxPrice, Double minArea) {
+        User currentUser = getCurrentUser();
         return roomRepository.searchRooms(keyword, district, minPrice, maxPrice, minArea)
                 .stream()
                 .distinct()
-                .map(room -> mapToResponse(room, null))
+                .map(room -> mapToResponse(room, currentUser))
                 .collect(Collectors.toList());
     }
     public RoomResponse mapToResponse(Room room, User currentUser) {
@@ -99,6 +111,7 @@ public class RoomService {
         if (currentUser != null) {
             isFav = favoriteRepository.existsByUserIdAndRoomId(currentUser.getId(), room.getId());
         }
+        Double avgStars = ratingRepository.getAverageStars(room.getId());
 
         return RoomResponse.builder()
                 .id(room.getId())
@@ -125,13 +138,15 @@ public class RoomService {
                         .collect(Collectors.toSet()))
                 .createdAt(room.getCreatedAt())
                 .isFavorite(isFav)
+                .averageStars(avgStars != null ? Math.round(avgStars * 10.0) / 10.0 : 0.0)
                 .build();
     }
 
     public List<RoomResponse> getRoomsByStatus(RoomStatus status) {
+        User currentUser = getCurrentUser();
         return roomRepository.findAllByStatus(status).stream()
                 .distinct()
-                .map(room -> mapToResponse(room, null))
+                .map(room -> mapToResponse(room, currentUser))
                 .collect(Collectors.toList());
     }
 
@@ -172,13 +187,14 @@ public class RoomService {
     }
 
     @Transactional
-    public void toggleRentStatus(Long roomId) {
+    public void toggleRentStatus(Long roomId, User currentUser) {
         Room room = roomRepository.findById(roomId).orElseThrow();
-        if (room.getStatus() == RoomStatus.AVAILABLE) {
-            room.setStatus(RoomStatus.RENTED);
-        } else {
-            room.setStatus(RoomStatus.AVAILABLE);
+
+        if (!room.getOwner().getId().equals(currentUser.getId())) {
+            throw new RuntimeException("Bạn không có quyền thay đổi trạng thái phòng này!");
         }
+
+        room.setStatus(room.getStatus() == RoomStatus.AVAILABLE ? RoomStatus.RENTED : RoomStatus.AVAILABLE);
         roomRepository.save(room);
     }
 
@@ -196,6 +212,11 @@ public class RoomService {
         room.setPrice(request.getPrice());
         room.setArea(request.getArea());
         room.setAddress(request.getAddress());
+        room.setProvince(request.getProvince()); // Thêm cái này
+        room.setDistrict(request.getDistrict()); // Thêm cái này
+        room.setWard(request.getWard());         // Thêm cái này
+        room.setLatitude(request.getLatitude());   // Cực kỳ quan trọng
+        room.setLongitude(request.getLongitude()); // Cực kỳ quan trọng
         room.setStatus(RoomStatus.PENDING);
 
         if (request.getAmenityIds() != null) {

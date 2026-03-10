@@ -11,7 +11,12 @@ public class RoomUpdateRequest {
     private Double price;
     private Double area;
     private String address;
+    private String province;
+    private String district;
+    private String ward;
+    private double latitude;
+    private double longitude;
     private List<Long> amenityIds;
-    private List<String> remainingImageUrls; // Danh sách các link ảnh cũ mà người dùng muốn giữ lại
-    private Integer primaryImageIndex; // Index của ảnh đại diện mới (nếu có)
+    private List<String> remainingImageUrls;
+    private Integer primaryImageIndex;
 }

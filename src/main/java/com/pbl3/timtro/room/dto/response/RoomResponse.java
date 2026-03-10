@@ -29,4 +29,5 @@ public class RoomResponse {
     private Set<String> amenities;
     private LocalDateTime createdAt;
     private boolean isFavorite;
+    private double averageStars;
 }
