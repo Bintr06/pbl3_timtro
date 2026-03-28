@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-TimtroApplication<timtro>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.pbl3.timtro.TimtroApplication",
+            "projectName": "timtro",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}

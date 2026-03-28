@@ -1,0 +1,19 @@
+# 1. Backend rác (Java/Maven)
+**/target/
+**/.mvn/
+**/mvnw
+**/mvnw.cmd
+**/*.iml
+
+# 2. Frontend rác (Node/Vite)
+**/node_modules/
+**/dist/
+**/package-lock.json
+
+# 3. File cấu hình IDE cũ
+**/.idea/
+**/.vscode/
+
+# 4. Tài liệu không liên quan đến code
+**/*.docx
+**/*.pdf
