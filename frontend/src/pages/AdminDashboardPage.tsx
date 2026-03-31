@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { del, get, post, put } from '../apiClient';
 
@@ -351,7 +351,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const loadLowRatedUsers = async () => {
+  const loadLowRatedUsers = useCallback(async () => {
     try {
       const response = await get<LowRatedUserRow[]>(`/api/admin/ratings/low-rated-users?maxStars=${lowRatedMaxStars}`);
       const formatted: LowRatedUser[] = response.map((item) => ({
@@ -365,7 +365,7 @@ export default function AdminDashboardPage() {
     } catch {
       setLowRatedUsers([]);
     }
-  };
+  }, [lowRatedMaxStars]);
 
   const deleteRating = async (ratingId: number) => {
     const ok = window.confirm('Xóa đánh giá này?');
@@ -515,13 +515,13 @@ export default function AdminDashboardPage() {
     if (activeSection === 'rooms') {
       void loadAdminRooms();
     }
-  }, [activeSection]);
+  }, [activeSection, loadLowRatedUsers]);
 
   useEffect(() => {
     if (activeSection === 'ratings') {
       void loadLowRatedUsers();
     }
-  }, [lowRatedMaxStars, activeSection]);
+  }, [activeSection, loadLowRatedUsers]);
 
   useEffect(() => {
     const loadAdminProfile = async () => {

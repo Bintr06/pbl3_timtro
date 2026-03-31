@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import Cropper, { type Area } from 'react-easy-crop';
@@ -2415,7 +2415,7 @@ function ChatPage() {
     [messages]
   );
 
-  const formatPreviewTime = (timestamp?: string) => {
+  const formatPreviewTime = useCallback((timestamp?: string) => {
     if (!timestamp) {
       return '';
     }
@@ -2429,9 +2429,9 @@ function ChatPage() {
     return sameDay
       ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
       : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-  };
+  }, []);
 
-  const toPreviewText = (content: string) => {
+  const toPreviewText = useCallback((content: string) => {
     const normalized = normalizeChatMessageContent(content);
     if (isImageMessage(normalized)) {
       return 'Da gui anh';
@@ -2440,9 +2440,9 @@ function ChatPage() {
       return 'Da gui lien ket';
     }
     return normalized;
-  };
+  }, []);
 
-  const fetchHistory = async (otherUserId: number, silent = false, markRead = false) => {
+  const fetchHistory = useCallback(async (otherUserId: number, silent = false, markRead = false) => {
     if (!silent) {
       setLoadingMessages(true);
     }
@@ -2474,7 +2474,7 @@ function ChatPage() {
         setLoadingMessages(false);
       }
     }
-  };
+  }, [formatPreviewTime, toPreviewText]);
 
   useEffect(() => {
     const loadChatData = async () => {
@@ -2544,7 +2544,7 @@ function ChatPage() {
     };
 
     loadChatData();
-  }, [initialUserId, initialName]);
+  }, [fetchHistory, formatPreviewTime, initialName, initialUserId, toPreviewText]);
 
   useEffect(() => {
     if (!selectedContactId) {
@@ -2566,7 +2566,7 @@ function ChatPage() {
       void fetchHistory(selectedContactId, true, true);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [selectedContactId]);
+  }, [fetchHistory, selectedContactId]);
 
   useEffect(() => {
     if (!getAuthToken()) {
