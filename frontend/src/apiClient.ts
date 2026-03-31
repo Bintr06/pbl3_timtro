@@ -75,9 +75,10 @@ export function put<T, B = unknown>(path: string, body?: B): Promise<T> {
   });
 }
 
-export function del<T>(path: string): Promise<T> {
+export function del<T, B = unknown>(path: string, body?: B): Promise<T> {
   return request<T>(path, {
     method: 'DELETE',
+    body: body ? JSON.stringify(body) : undefined,
   });
 }
 
