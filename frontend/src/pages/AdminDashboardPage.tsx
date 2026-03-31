@@ -85,6 +85,9 @@ type LowRatedUser = {
   avgRating: number;
   ratingCount: number;
 };
+
+type LowRatedUserRow = [number, string, string, number | string, number | string];
+
 type NotificationUserOption = {
   id: number;
   username: string;
@@ -350,13 +353,13 @@ export default function AdminDashboardPage() {
 
   const loadLowRatedUsers = async () => {
     try {
-      const response = await get<Object[]>(`/api/admin/ratings/low-rated-users?maxStars=${lowRatedMaxStars}`);
-      const formatted: LowRatedUser[] = response.map((item: any) => ({
+      const response = await get<LowRatedUserRow[]>(`/api/admin/ratings/low-rated-users?maxStars=${lowRatedMaxStars}`);
+      const formatted: LowRatedUser[] = response.map((item) => ({
         userId: item[0],
         username: item[1],
         displayName: item[2],
-        avgRating: parseFloat(item[3]),
-        ratingCount: parseInt(item[4]),
+        avgRating: Number(item[3]),
+        ratingCount: Number(item[4]),
       }));
       setLowRatedUsers(formatted);
     } catch {

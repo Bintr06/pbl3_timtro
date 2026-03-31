@@ -3208,14 +3208,11 @@ function RoomListPage({
 
   const nearbyPageSize = 5;
   const nearbyTotalPages = Math.max(1, Math.ceil(nearbyRooms.length / nearbyPageSize));
+  const nearbyDisplayIndex = Math.min(nearbyIndex, nearbyTotalPages - 1);
   const nearbyVisibleRooms = useMemo<RoomWithDistance[]>(() => {
-    const start = nearbyIndex * nearbyPageSize;
+    const start = nearbyDisplayIndex * nearbyPageSize;
     return nearbyRooms.slice(start, start + nearbyPageSize);
-  }, [nearbyRooms, nearbyIndex]);
-
-  useEffect(() => {
-    setNearbyIndex(0);
-  }, [nearbyRooms.length]);
+  }, [nearbyRooms, nearbyDisplayIndex]);
 
   return (
     <section className="space-y-4">
@@ -3543,7 +3540,7 @@ function RoomListPage({
                   type="button"
                   className="absolute -left-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl font-bold text-neutral-700 shadow-md transition hover:bg-neutral-50 disabled:opacity-40"
                   onClick={() => setNearbyIndex((prev) => Math.max(0, prev - 1))}
-                  disabled={nearbyIndex === 0}
+                  disabled={nearbyDisplayIndex === 0}
                   aria-label="Xem nhóm phòng gần trước"
                 >
                   &lt;
@@ -3625,7 +3622,7 @@ function RoomListPage({
                   type="button"
                   className="absolute -right-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl font-bold text-neutral-700 shadow-md transition hover:bg-neutral-50 disabled:opacity-40"
                   onClick={() => setNearbyIndex((prev) => Math.min(nearbyTotalPages - 1, prev + 1))}
-                  disabled={nearbyIndex >= nearbyTotalPages - 1}
+                  disabled={nearbyDisplayIndex >= nearbyTotalPages - 1}
                   aria-label="Xem nhóm phòng gần tiếp theo"
                 >
                   &gt;

@@ -813,8 +813,8 @@ function Header() {
       ].filter(Boolean);
       const area = hasAnyAdmin ? await geocodeFirst(areaCandidates) : null;
 
-      let areaLat = area ? Number(area.lat) : Number.NaN;
-      let areaLng = area ? Number(area.lon) : Number.NaN;
+      const areaLat = area ? Number(area.lat) : Number.NaN;
+      const areaLng = area ? Number(area.lon) : Number.NaN;
       if (area && !Number.isNaN(areaLat) && !Number.isNaN(areaLng)) {
         const areaZoom = selectedWard ? 15 : selectedDistrict ? 13 : 11;
         setMapCenter([areaLat, areaLng]);
