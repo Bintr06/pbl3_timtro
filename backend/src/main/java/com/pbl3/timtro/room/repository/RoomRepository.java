@@ -14,14 +14,14 @@ import java.util.Set;
 @Repository
 public interface RoomRepository extends JpaRepository<Room, Long> {
         @Query("SELECT DISTINCT r FROM Room r " +
+                        "LEFT JOIN FETCH r.owner " +
                         "LEFT JOIN FETCH r.images " +
-                        "LEFT JOIN FETCH r.amenities " +
                         "ORDER BY r.createdAt DESC")
         List<Room> findAllWithImagesAndAmenitiesForAdmin();
 
     @Query("SELECT DISTINCT r FROM Room r " +
+            "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
-            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.status = 'AVAILABLE' " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllAvailableWithImagesAndAmenities();
@@ -32,22 +32,22 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     List<Room> findByProvince(String province);
 
     @Query("SELECT DISTINCT r FROM Room r " +
+            "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
-            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.status = :status " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByStatus(@Param("status") RoomStatus status);
 
     @Query("SELECT DISTINCT r FROM Room r " +
+            "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
-            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.owner.id = :ownerId " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByOwnerId(@Param("ownerId") Long ownerId);
 
     @Query("SELECT DISTINCT r FROM Room r " +
+            "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
-            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.owner.id = :ownerId AND r.status IN :statuses " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByOwnerIdAndStatuses(@Param("ownerId") Long ownerId, @Param("statuses") Set<RoomStatus> statuses);
