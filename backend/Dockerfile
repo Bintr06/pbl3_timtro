@@ -4,11 +4,11 @@ FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /app
 
 # Copy pom.xml and download dependencies
-COPY backend/pom.xml .
-RUN cd / && mvn -f /app/pom.xml dependency:resolve
+COPY pom.xml .
+RUN mvn dependency:resolve
 
 # Copy source code
-COPY backend/ .
+COPY . .
 
 # Build application
 RUN mvn clean package -DskipTests
