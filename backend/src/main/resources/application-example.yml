@@ -1,0 +1,64 @@
+# ===========================
+# TIMTRO Application Configuration Example
+# ===========================
+# For development: create application-dev.properties with hardcoded values
+# For production: create application-prod.properties with environment variables
+# Example: spring.datasource.url=${DB_URL}
+# ===========================
+
+spring:
+  application:
+    name: timtro
+  
+  # Profile: dev (local) or prod (Azure)
+  profiles:
+    active: dev
+  
+  # File upload limits
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+  
+  # Database Configuration
+  datasource:
+    url: jdbc:mysql://localhost:3306/pbl3_timtro?createDatabaseIfNotExist=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  # JPA/Hibernate Configuration
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+  
+  # Email Configuration
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: your-email@gmail.com
+    password: your-app-password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# JWT Security Configuration
+security:
+  jwt:
+    secret-key: MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY= # Min 32 chars (base64)
+
+# Cloudinary Configuration (Image Storage)
+cloudinary:
+  cloud-name: your-cloud-name
+  api-key: your-api-key
+  api-secret: your-api-secret
+
+# CORS Configuration
+app:
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173
