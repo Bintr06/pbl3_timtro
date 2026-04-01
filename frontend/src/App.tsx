@@ -38,6 +38,13 @@ type RoomWithDistance = Room & {
   distanceKm?: number;
 };
 
+type SearchableRoom = Room & {
+  searchAddress: string;
+  searchAmenityText: string;
+  searchTitle: string;
+  priceValue: number;
+};
+
 type ViewedHistoryItem = {
   room: Room;
   viewedAt: string;
@@ -565,26 +572,37 @@ function App() {
     return Array.from(new Set([...DEFAULT_AMENITY_OPTIONS, ...dynamicAmenities])).filter(Boolean);
   }, [rooms]);
 
+  const searchableRooms = useMemo<SearchableRoom[]>(() => {
+    return rooms.map((room) => ({
+      ...room,
+      searchAddress: normalizeLocation(
+        `${room.address ?? ''} ${room.ward ?? ''} ${room.district ?? ''} ${room.province ?? ''}`
+      ),
+      searchAmenityText: normalize(`${getRoomAmenityNames(room).join(' ')} ${room.description ?? ''}`),
+      searchTitle: normalize(room.title ?? ''),
+      priceValue: room.price ?? 0,
+    }));
+  }, [rooms]);
+
   const filteredRooms = useMemo(() => {
     const normalizedAppliedProvince = normalizeLocation(appliedProvinceName);
     const normalizedAppliedDistrict = normalizeLocation(appliedDistrictName);
     const normalizedAppliedWard = normalizeLocation(appliedWardName);
     const normalizedAppliedKeyword = normalize(appliedSearchKeyword.trim());
+    const normalizedAppliedAmenities = appliedAmenities.map((amenity) => normalize(amenity));
 
-    return rooms.filter((room) => {
-      const fullAddress = normalizeLocation(
-        `${room.address ?? ''} ${room.ward ?? ''} ${room.district ?? ''} ${room.province ?? ''}`
-      );
-      const amenityText = normalize(`${getRoomAmenityNames(room).join(' ')} ${room.description ?? ''}`);
-      const roomPrice = room.price ?? 0;
-      const roomTitle = normalize(room.title ?? '');
+    return searchableRooms.filter((room) => {
+      const fullAddress = room.searchAddress;
+      const amenityText = room.searchAmenityText;
+      const roomPrice = room.priceValue;
+      const roomTitle = room.searchTitle;
 
       const matchProvince = !normalizedAppliedProvince || fullAddress.includes(normalizedAppliedProvince);
       const matchDistrict = !normalizedAppliedDistrict || fullAddress.includes(normalizedAppliedDistrict);
       const matchWard = !normalizedAppliedWard || fullAddress.includes(normalizedAppliedWard);
       const matchAmenity =
-        appliedAmenities.length === 0 ||
-        appliedAmenities.every((amenity) => amenityText.includes(normalize(amenity)));
+        normalizedAppliedAmenities.length === 0 ||
+        normalizedAppliedAmenities.every((amenity) => amenityText.includes(amenity));
       let matchPrice = true;
 
       if (appliedPriceFilter === 'under-2m') {
@@ -600,7 +618,7 @@ function App() {
       return matchProvince && matchDistrict && matchWard && matchAmenity && matchPrice && matchTitle;
     });
   }, [
-    rooms,
+    searchableRooms,
     appliedProvinceName,
     appliedDistrictName,
     appliedWardName,
@@ -620,7 +638,7 @@ function App() {
     setAppliedPriceFilter(priceFilter);
     setAppliedAmenities([...selectedAmenities]);
     setAppliedSearchKeyword(searchKeyword);
-    setRoomReloadTick((prev) => prev + 1);
+    setCurrentPage(1);
   };
 
   const resetFilters = () => {
@@ -641,7 +659,6 @@ function App() {
     setAppliedSearchKeyword('');
 
     setCurrentPage(1);
-    setRoomReloadTick((prev) => prev + 1);
   };
 
   const toggleFavorite = async (roomId: number) => {

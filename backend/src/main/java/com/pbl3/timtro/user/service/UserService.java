@@ -17,9 +17,16 @@ public class UserService {
     private final CloudinaryService cloudinaryService;
     @Transactional
     public String updateAvatar(User currentUser, MultipartFile file){
+        String oldAvatarUrl = currentUser.getAvatarUrl();
         String url = cloudinaryService.uploadFile(file, "avatars");
         currentUser.setAvatarUrl(url);
         userRepository.save(currentUser);
+
+        // Remove previous avatar from Cloudinary after the new one is persisted.
+        if (oldAvatarUrl != null && !oldAvatarUrl.isBlank() && !oldAvatarUrl.equals(url)) {
+            cloudinaryService.deleteFile(oldAvatarUrl);
+        }
+
         return url;
     }
     @Transactional
