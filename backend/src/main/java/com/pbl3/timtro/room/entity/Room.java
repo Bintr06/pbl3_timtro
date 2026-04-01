@@ -3,6 +3,7 @@ import com.pbl3.timtro.room.enums.RoomStatus;
 import com.pbl3.timtro.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -51,6 +52,7 @@ public class Room {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id")
+    @BatchSize(size = 50)
     private User owner;
     @Builder.Default
     @ManyToMany
@@ -59,10 +61,12 @@ public class Room {
             joinColumns = @JoinColumn(name = "room_id"),
             inverseJoinColumns = @JoinColumn(name = "amenity_id")
     )
+            @BatchSize(size = 50)
     private Set<Amenity> amenities = new HashSet<>();
 
     @Builder.Default
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, orphanRemoval = true)
+            @BatchSize(size = 50)
     private List<RoomImage> images = new ArrayList<>();
 
     @CreationTimestamp
