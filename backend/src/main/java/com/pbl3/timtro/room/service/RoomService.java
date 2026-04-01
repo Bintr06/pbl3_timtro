@@ -31,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.stream.Collectors;
 
 @Service
@@ -168,7 +169,14 @@ public class RoomService {
                 .amenityIds(room.getAmenities().stream()
                         .map(Amenity::getId)
                         .collect(Collectors.toSet()))
-                .createdAt(room.getCreatedAt() == null ? null : room.getCreatedAt().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toOffsetDateTime())
+                .createdAt(
+                    room.getCreatedAt() == null
+                        ? null
+                        : room.getCreatedAt()
+                            .atOffset(ZoneOffset.UTC)
+                            .atZoneSameInstant(ZoneId.of("Asia/Ho_Chi_Minh"))
+                            .toOffsetDateTime()
+                )
                 .isFavorite(isFav)
                 .build();
     }
