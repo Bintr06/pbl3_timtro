@@ -8,10 +8,12 @@ Thumbs.db
 *.log
 logs/
 
-# Env files (keep examples)
+# Environment files
 .env
 .env.*
-!.env.example
+
+# Backend development configuration (contains local credentials)
+backend/src/main/resources/application-dev.properties
 
 # Backend build output
 backend/target/
