@@ -43,7 +43,6 @@ public class ChatService {
                 return parsed;
             }
         } catch (Exception ignored) {
-            // Keep fallback handling below for non-JSON plain text.
         }
 
         if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) ||

@@ -33,6 +33,12 @@ spring:
       ddl-auto: update
     show-sql: true
     database-platform: org.hibernate.dialect.MySQL8Dialect
+    properties:
+      hibernate:
+        jdbc:
+              time_zone: Asia/Ho_Chi_Minh
+  jackson:
+            time-zone: Asia/Ho_Chi_Minh
   
   # Email Configuration
   mail:

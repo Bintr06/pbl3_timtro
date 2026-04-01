@@ -3,7 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } fr
 import axios from 'axios';
 import Cropper, { type Area } from 'react-easy-crop';
 import L from 'leaflet';
-import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, TileLayer, Tooltip, useMapEvents } from 'react-leaflet';
 import { del, get, getAuthToken, post, postFormData, put, putFormData } from './apiClient';
 import Header from './components/Header';
 import AdminDashboardPage from './pages/AdminDashboardPage';
@@ -188,8 +188,6 @@ const PRICE_OPTIONS = [
   { value: 'over-5m', label: 'Trên 5 triệu' },
 ];
 
-const DEFAULT_AMENITY_OPTIONS = ['Wifi', 'Điều hòa', 'Chỗ để xe', 'Nóng lạnh', 'Gác lửng'];
-
 const LISTING_STATUS_OPTIONS = [
   { value: 'AVAILABLE', label: 'AVAILABLE' },
   { value: 'RENTED', label: 'RENTED' },
@@ -277,14 +275,12 @@ const normalizeChatMessageContent = (content: string) => {
     return '';
   }
 
-  // Some chat APIs may return raw JSON-string content (e.g. "hello").
   try {
     const parsed = JSON.parse(trimmed);
     if (typeof parsed === 'string') {
       return parsed;
     }
   } catch {
-    // keep fallback handling below
   }
 
   if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
@@ -342,23 +338,21 @@ const addRoomToViewedHistory = (room: Room) => {
   saveViewedHistory(next);
 };
 
-const buildRoomMarkerIcon = (imageUrl?: string) => {
-  const fallback = 'https://placehold.co/96x70?text=Timtro';
-  const safeImageUrl = (imageUrl || fallback).replace(/"/g, '&quot;');
+const buildRoomMarkerIcon = (color: 'blue' | 'red' = 'blue') => {
+  const markerColor = color === 'red' ? '#ef4444' : '#2f80ed';
+  const markerShadow = color === 'red' ? 'rgba(239,68,68,0.35)' : 'rgba(47,128,237,0.35)';
 
   return L.divIcon({
     className: 'timtro-room-marker',
     html: `
-      <div class="timtro-marker-root">
-        <div class="timtro-marker-thumb">
-          <img src="${safeImageUrl}" alt="Room" />
-        </div>
-        <div class="timtro-marker-pin"></div>
+      <div style="position:relative;width:42px;height:56px;display:flex;align-items:flex-start;justify-content:center;">
+        <div style="width:34px;height:34px;background:${markerColor};border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 8px 18px ${markerShadow};border:2px solid #ffffff;"></div>
+        <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);width:12px;height:12px;border-radius:9999px;background:#ffffff;"></div>
       </div>
     `,
-    iconSize: [90, 92],
-    iconAnchor: [45, 86],
-    popupAnchor: [0, -84],
+    iconSize: [42, 56],
+    iconAnchor: [21, 52],
+    popupAnchor: [0, -48],
   });
 };
 
@@ -387,6 +381,7 @@ function App() {
   const [selectedProvinceCode, setSelectedProvinceCode] = useState<number | null>(null);
   const [selectedDistrictCode, setSelectedDistrictCode] = useState<number | null>(null);
   const [selectedWardCode, setSelectedWardCode] = useState<number | null>(null);
+  const [publicAmenityNames, setPublicAmenityNames] = useState<string[]>([]);
   const [priceFilter, setPriceFilter] = useState('all');
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -535,6 +530,20 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const fetchPublicAmenities = async () => {
+      try {
+        const response = await get<ApiResponse<AmenityOption[]>>('/api/rooms/public/amenities');
+        const names = (response.data ?? []).map((item) => item.name).filter(Boolean);
+        setPublicAmenityNames(Array.from(new Set(names)));
+      } catch {
+        setPublicAmenityNames([]);
+      }
+    };
+
+    void fetchPublicAmenities();
+  }, []);
+
+  useEffect(() => {
     const loadWards = async () => {
       if (!selectedDistrictCode) {
         setWards([]);
@@ -569,8 +578,8 @@ function App() {
 
   const amenityOptions = useMemo(() => {
     const dynamicAmenities = rooms.flatMap(getRoomAmenityNames);
-    return Array.from(new Set([...DEFAULT_AMENITY_OPTIONS, ...dynamicAmenities])).filter(Boolean);
-  }, [rooms]);
+    return Array.from(new Set([...publicAmenityNames, ...dynamicAmenities])).filter(Boolean);
+  }, [publicAmenityNames, rooms]);
 
   const searchableRooms = useMemo<SearchableRoom[]>(() => {
     return rooms.map((room) => ({
@@ -1043,6 +1052,11 @@ function MyListingsPage() {
   }, [editingRoom, editProvinces, selectedEditProvinceCode]);
 
   const onDeleteListing = async (roomId: number) => {
+    const ok = window.confirm('Bạn có chắc muốn xóa tin này? Thao tác không thể hoàn tác.');
+    if (!ok) {
+      return;
+    }
+
     try {
       setActionRoomId(roomId);
       await del<string>(`/api/rooms/${roomId}`);
@@ -1676,15 +1690,15 @@ function MyListingsPage() {
                 }}
               />
               {hasPickedEditCoordinates && (
-                <Marker position={[currentEditLatitude, currentEditLongitude]} icon={buildRoomMarkerIcon(existingImageUrls[0])}>
-                  <Popup>
+                <Marker position={[currentEditLatitude, currentEditLongitude]} icon={buildRoomMarkerIcon()}>
+                  <Tooltip direction="top" offset={[0, -24]} opacity={1}>
                     <div className="text-xs">
                       <p className="font-semibold">Vị trí đã chọn</p>
                       <p className="mt-1">
                         {currentEditLatitude.toFixed(6)}, {currentEditLongitude.toFixed(6)}
                       </p>
                     </div>
-                  </Popup>
+                  </Tooltip>
                 </Marker>
               )}
             </MapContainer>
@@ -2607,7 +2621,6 @@ function ChatPage() {
           });
         });
       } catch {
-        // no-op
       }
     };
 
@@ -3748,9 +3761,11 @@ function RoomDetailPage() {
   const navigate = useNavigate();
   const { roomId } = useParams<{ roomId: string }>();
   const [room, setRoom] = useState<Room | null>(null);
+  const [mapRooms, setMapRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState(0);
+  const [isFavoriteUpdating, setIsFavoriteUpdating] = useState(false);
 
   useEffect(() => {
     const loadRoom = async () => {
@@ -3763,13 +3778,16 @@ function RoomDetailPage() {
         setLoading(true);
         setError(null);
         const response = await get<ApiResponse<Room[]>>('/api/rooms/public/all');
-        const found = (response.data ?? []).map(normalizeRoom).find((item) => item.id === Number(roomId)) ?? null;
+        const normalizedRooms = (response.data ?? []).map(normalizeRoom);
+        const found = normalizedRooms.find((item) => item.id === Number(roomId)) ?? null;
         if (!found) {
           setError('Không tìm thấy tin đăng này.');
           setRoom(null);
+          setMapRooms([]);
           return;
         }
         setRoom(found);
+        setMapRooms(normalizedRooms);
         setActiveImage(0);
         addRoomToViewedHistory(found);
       } catch (fetchError) {
@@ -3796,13 +3814,39 @@ function RoomDetailPage() {
     !Number.isNaN(room.latitude) &&
     !Number.isNaN(room.longitude);
 
-  const locationLabel = [room?.streetDetail, room?.ward, room?.district, room?.province].filter(Boolean).join(', ');
   const amenityNames = room ? getRoomAmenityNames(room) : [];
   const displayedStatus = room?.status === 'HIDDEN' ? 'HIDE' : room?.status || 'UNKNOWN';
   const fullAddress = [room?.streetDetail, room?.ward, room?.district, room?.province]
     .filter(Boolean)
     .join(', ');
-  const roomMarkerIcon = useMemo(() => buildRoomMarkerIcon(galleryImages[0]), [galleryImages]);
+  const currentRoomMarkerIcon = useMemo(() => buildRoomMarkerIcon('red'), []);
+  const otherRoomMarkerIcon = useMemo(() => buildRoomMarkerIcon('blue'), []);
+
+  const mapRoomItems = useMemo(() => {
+    return mapRooms.filter(
+      (item) =>
+        typeof item.latitude === 'number' &&
+        typeof item.longitude === 'number' &&
+        !Number.isNaN(item.latitude) &&
+        !Number.isNaN(item.longitude)
+    );
+  }, [mapRooms]);
+
+  const toggleDetailFavorite = async () => {
+    if (!room?.id || isFavoriteUpdating) {
+      return;
+    }
+
+    try {
+      setIsFavoriteUpdating(true);
+      await post<ApiResponse<null>>(`/api/favorites/${room.id}`);
+      setRoom((prev) => (prev ? { ...prev, isFavorite: !prev.isFavorite } : prev));
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : 'Không thể cập nhật yêu thích.');
+    } finally {
+      setIsFavoriteUpdating(false);
+    }
+  };
 
   return (
     <section className="mx-auto max-w-6xl space-y-5">
@@ -3811,7 +3855,6 @@ function RoomDetailPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700">Chi tiết tin</p>
             <h1 className="mt-1 text-2xl font-extrabold text-neutral-900">Thông tin phòng trọ</h1>
-            <p className="mt-1 text-sm text-neutral-600">Xem thông tin đầy đủ và vị trí thực tế của phòng trên bản đồ.</p>
           </div>
           <button
             type="button"
@@ -3872,7 +3915,7 @@ function RoomDetailPage() {
                 <p>📐 Diện tích: {room.area ? `${room.area} m²` : 'Đang cập nhật'}</p>
                 <p>👤 Người đăng: {room.ownerName || 'Đang cập nhật'}</p>
                 <p>📞 Liên hệ: {room.ownerPhone || 'Đang cập nhật'}</p>
-                <p>🕒 Đăng lúc: {room.createdAt ? new Date(room.createdAt).toLocaleString('vi-VN') : 'Đang cập nhật'}</p>
+                <p>🕒 Đăng lúc: {room.createdAt ? new Date(room.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Đang cập nhật'}</p>
                 <p>⏱️ Hiển thị: {formatPostedTime(room.createdAt)}</p>
                 <p className="sm:col-span-2">📍 Địa chỉ đầy đủ: {fullAddress || 'Đang cập nhật địa chỉ'}</p>
                 <p>Tỉnh/Thành: {room.province || 'Đang cập nhật'}</p>
@@ -3899,12 +3942,33 @@ function RoomDetailPage() {
                 )}
               </div>
 
-              <div className="mt-4 border-t border-neutral-200 pt-3">
-                <p className="text-sm font-semibold text-neutral-800">Mô tả chi tiết</p>
-                <p className="mt-1 text-sm leading-7 text-neutral-700">{room.description || 'Người đăng chưa thêm mô tả.'}</p>
-              </div>
+              {room.description && (
+                <div className="mt-4 border-t border-neutral-200 pt-3">
+                  <p className="text-sm font-semibold text-neutral-800">Mô tả chi tiết</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{room.description}</p>
+                </div>
+              )}
 
               <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition ${
+                    room.isFavorite
+                      ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+                  }`}
+                  disabled={isFavoriteUpdating}
+                  onClick={toggleDetailFavorite}
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path
+                      d="M12 21s-7-4.8-9.2-8.2C.9 9.7 2.2 6 5.8 5.2A5.2 5.2 0 0 1 12 8a5.2 5.2 0 0 1 6.2-2.8c3.6.8 4.9 4.5 3 7.6C19 16.2 12 21 12 21Z"
+                      fill={room.isFavorite ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                    />
+                  </svg>
+                  {room.isFavorite ? 'Đã yêu thích' : 'Yêu thích'}
+                </button>
                 <button
                   type="button"
                   className="inline-flex h-10 items-center justify-center rounded-xl bg-orange-500 px-4 text-sm font-semibold text-white hover:bg-orange-600"
@@ -3937,7 +4001,6 @@ function RoomDetailPage() {
           <aside className="space-y-4">
             <div className="rounded-3xl border border-neutral-200 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-neutral-900">Vị trí phòng trên bản đồ</p>
-              <p className="mt-1 text-xs text-neutral-500">Leaflet map với marker vị trí của phòng trọ.</p>
 
               {hasCoordinates ? (
                 <div className="mt-3 overflow-hidden rounded-2xl border border-neutral-200">
@@ -3945,20 +4008,49 @@ function RoomDetailPage() {
                     center={[room.latitude as number, room.longitude as number]}
                     zoom={16}
                     scrollWheelZoom
-                    className="h-[460px] w-full md:h-[520px]"
+                    className="h-[700px] w-full lg:h-[850px]"
                   >
                     <TileLayer
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
-                    <Marker position={[room.latitude as number, room.longitude as number]} icon={roomMarkerIcon}>
-                      <Popup>
-                        <div className="text-xs">
-                          <p className="font-semibold">{room.title}</p>
-                          <p className="mt-1">{locationLabel || 'Địa chỉ đang cập nhật'}</p>
-                        </div>
-                      </Popup>
-                    </Marker>
+                    {mapRoomItems.map((item) => {
+                      const isCurrent = item.id === room.id;
+                      const itemAddress = [item.streetDetail, item.ward, item.district, item.province]
+                        .filter(Boolean)
+                        .join(', ');
+
+                      return (
+                        <Marker
+                          key={`detail-map-room-${item.id}`}
+                          position={[item.latitude as number, item.longitude as number]}
+                          icon={isCurrent ? currentRoomMarkerIcon : otherRoomMarkerIcon}
+                          eventHandlers={{
+                            click: () => {
+                              if (!isCurrent) {
+                                navigate(`/rooms/${item.id}`);
+                              }
+                            },
+                          }}
+                        >
+                          <Tooltip direction="top" offset={[0, -24]} opacity={1}>
+                            <div className="w-44 text-xs">
+                              <img
+                                src={item.imageUrls?.[0] || 'https://placehold.co/280x160?text=Timtro'}
+                                alt={item.title}
+                                className="h-20 w-full rounded-md object-cover"
+                              />
+                              <p className="mt-1 line-clamp-1 font-semibold text-neutral-900">{item.title}</p>
+                              <p className="line-clamp-1 text-neutral-600">{formatPricePerMonth(item.price ?? 0)}</p>
+                              <p className="line-clamp-1 text-neutral-500">{itemAddress || 'Đang cập nhật địa chỉ'}</p>
+                              <p className={`mt-1 font-semibold ${isCurrent ? 'text-red-600' : 'text-blue-600'}`}>
+                                {isCurrent ? 'Phòng đang xem' : 'Nhấn để xem phòng này'}
+                              </p>
+                            </div>
+                          </Tooltip>
+                        </Marker>
+                      );
+                    })}
                   </MapContainer>
                 </div>
               ) : (
@@ -3990,10 +4082,36 @@ function ViewHistoryPage() {
   const [historyItems, setHistoryItems] = useState<ViewedHistoryItem[]>([]);
 
   useEffect(() => {
-    const sync = () => setHistoryItems(loadViewedHistory());
-    sync();
-    window.addEventListener('room-view-history-updated', sync);
-    return () => window.removeEventListener('room-view-history-updated', sync);
+    const sync = async () => {
+      const localHistory = loadViewedHistory();
+      if (localHistory.length === 0) {
+        setHistoryItems([]);
+        return;
+      }
+
+      try {
+        const response = await get<ApiResponse<Room[]>>('/api/rooms/public/all');
+        const publicIds = new Set((response.data ?? []).map((room) => room.id));
+        const cleaned = localHistory.filter((item) => publicIds.has(item.room.id));
+
+        if (cleaned.length !== localHistory.length) {
+          saveViewedHistory(cleaned);
+        }
+        setHistoryItems(cleaned);
+      } catch {
+        setHistoryItems(localHistory);
+      }
+    };
+
+    const onHistoryUpdated = () => {
+      void sync();
+    };
+
+    void sync();
+    window.addEventListener('room-view-history-updated', onHistoryUpdated);
+    return () => {
+      window.removeEventListener('room-view-history-updated', onHistoryUpdated);
+    };
   }, []);
 
   const removeItem = (roomId: number) => {

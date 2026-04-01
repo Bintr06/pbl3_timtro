@@ -3,6 +3,9 @@
 
 name: Build and deploy JAR app to Azure Web App - timtro-pbl3
 
+env:
+  AZURE_WEBAPP_NAME: timtro-pbl3-dfdtahgnenghcvb8
+
 on:
   push:
     branches:
@@ -44,12 +47,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: java-app
+          path: deploy-artifact
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'timtro-pbl3'
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
-          package: '*.jar'
+          package: 'deploy-artifact/*.jar'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_7510F91FB5724FC699A59B7C2CD2D119 }}

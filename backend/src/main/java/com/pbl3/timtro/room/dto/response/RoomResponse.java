@@ -3,7 +3,7 @@ package com.pbl3.timtro.room.dto.response;
 import lombok.Builder;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
 
@@ -29,6 +29,6 @@ public class RoomResponse {
     private List<String> imageUrls;
     private Set<String> amenities;
     private Set<Long> amenityIds;
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
     private boolean isFavorite;
 }

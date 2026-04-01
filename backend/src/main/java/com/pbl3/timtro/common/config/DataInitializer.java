@@ -27,7 +27,6 @@ public class DataInitializer implements CommandLineRunner {
             System.out.println(">> Đã chuyển " + migratedRooms + " tin từ PENDING sang AVAILABLE.");
         }
 
-        // Đồng bộ tiện ích backend với bộ lọc tiện ích ở frontend, đồng thời giữ các tiện ích cũ.
         Map<String, String> requiredAmenities = new LinkedHashMap<>();
         requiredAmenities.put("Wifi", "wifi");
         requiredAmenities.put("Điều hòa", "ac_unit");

@@ -196,7 +196,6 @@ const formatUsersError = (error: unknown) => {
       }
     }
   } catch {
-    // keep fallback below
   }
 
   return raw;
@@ -378,7 +377,6 @@ export default function AdminDashboardPage() {
       await del<void>(`/api/admin/ratings/${ratingId}`);
       await loadRatings(ratingSearchUsername);
     } catch {
-      // no-op
     } finally {
       setDeletingRatingId(null);
     }
@@ -414,7 +412,6 @@ export default function AdminDashboardPage() {
 
       await loadAllUsers();
     } catch {
-      // no-op
     } finally {
       setLockingUserId(null);
     }
@@ -688,7 +685,6 @@ export default function AdminDashboardPage() {
       await put<string>(`/api/admin/reports/users/${reportId}/status?status=${status}`);
       await loadUserReports();
     } catch {
-      // no-op
     } finally {
       setReportActionId(null);
     }

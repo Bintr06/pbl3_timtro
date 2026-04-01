@@ -29,7 +29,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        // Bỏ qua các request công khai để tăng hiệu năng (tùy chọn)
         var path = request.getServletPath();
         if (path.equals("/api/auth/register") || path.equals("/api/auth/login") || path.equals("/api/auth/forgot-password") || path.equals("/api/auth/reset-password")) {
             filterChain.doFilter(request, response);

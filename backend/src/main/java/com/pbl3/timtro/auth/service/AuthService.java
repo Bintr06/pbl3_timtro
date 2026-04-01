@@ -1,18 +1,28 @@
 package com.pbl3.timtro.auth.service;
 import com.pbl3.timtro.auth.dto.request.ChangePasswordRequest;
 import com.pbl3.timtro.auth.dto.request.ForgotPasswordRequest;
+import com.pbl3.timtro.auth.dto.request.GoogleLoginRequest;
 import com.pbl3.timtro.auth.dto.request.LoginRequest;
+import com.pbl3.timtro.auth.dto.request.ResendVerificationRequest;
 import com.pbl3.timtro.auth.dto.request.RegisterRequest;
 import com.pbl3.timtro.auth.dto.request.ResetPasswordRequest;
+import com.pbl3.timtro.auth.dto.request.VerifyEmailRequest;
 import com.pbl3.timtro.auth.dto.response.AuthResponse;
+import com.pbl3.timtro.auth.entity.EmailVerificationToken;
 import com.pbl3.timtro.auth.entity.PasswordResetToken;
+import com.pbl3.timtro.auth.repository.EmailVerificationTokenRepository;
 import com.pbl3.timtro.auth.repository.PasswordResetTokenRepository;
 import com.pbl3.timtro.common.config.security.JwtService;
 import com.pbl3.timtro.user.entity.User;
 import com.pbl3.timtro.user.enums.Role;
 import com.pbl3.timtro.user.repository.UserRepository;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,17 +31,26 @@ import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.Collections;
 import java.util.Random;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private static final NetHttpTransport GOOGLE_HTTP_TRANSPORT = new NetHttpTransport();
+    private static final GsonFactory GOOGLE_JSON_FACTORY = GsonFactory.getDefaultInstance();
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final JavaMailSender mailSender;
+    @Value("${google.oauth.client-id:}")
+    private String googleOauthClientId;
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         String normalizedUsername = request.getUsername().trim();
@@ -53,14 +72,11 @@ public class AuthService {
                 .isVerified(false)
                 .build();
 
-        // QUAN TRỌNG: Gán lại user để lấy id và createdAt từ Database
         user = userRepository.save(user);
-
-        // Lúc này user.getCreatedAt() đã có giá trị (nếu đã bật @EnableJpaAuditing)
-        String token = jwtService.generateToken(user);
+        issueEmailVerificationToken(user);
 
         return AuthResponse.builder()
-                .token(token)
+            .token(null)
                 .username(user.getUsername())
                 .displayName(user.getDisplayName())
                 .role(user.getRole().name())
@@ -76,8 +92,74 @@ public class AuthService {
         if (!user.isEnabled()) {
             throw new RuntimeException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin!");
         }
+        if (!user.isVerified()) {
+            throw new RuntimeException("Tài khoản chưa xác thực email. Vui lòng nhập mã xác thực trước khi đăng nhập.");
+        }
         String token = jwtService.generateToken(user);
 
+        return AuthResponse.builder()
+                .token(token)
+                .username(user.getUsername())
+                .displayName(user.getDisplayName())
+                .role(user.getRole().name())
+                .build();
+    }
+
+    @Transactional
+    public AuthResponse loginWithGoogle(GoogleLoginRequest request) {
+        if (googleOauthClientId == null || googleOauthClientId.isBlank()) {
+            throw new RuntimeException("Đăng nhập Google chưa được cấu hình ở máy chủ");
+        }
+
+        GoogleIdToken idToken;
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(GOOGLE_HTTP_TRANSPORT, GOOGLE_JSON_FACTORY)
+                    .setAudience(Collections.singletonList(googleOauthClientId))
+                    .build();
+            idToken = verifier.verify(request.getIdToken().trim());
+        } catch (Exception e) {
+            throw new RuntimeException("Không thể xác minh Google token");
+        }
+
+        if (idToken == null) {
+            throw new RuntimeException("Google token không hợp lệ");
+        }
+
+        GoogleIdToken.Payload payload = idToken.getPayload();
+        String email = payload.getEmail();
+        Boolean emailVerified = payload.getEmailVerified();
+        if (email == null || email.isBlank() || !Boolean.TRUE.equals(emailVerified)) {
+            throw new RuntimeException("Email Google chưa được xác thực");
+        }
+
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+        String displayName = payload.get("name") instanceof String name ? name : normalizedEmail;
+
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseGet(() -> {
+                    String username = buildUniqueUsername(normalizedEmail);
+                    User newUser = User.builder()
+                            .username(username)
+                            .hashedPassword(passwordEncoder.encode(UUID.randomUUID().toString()))
+                            .email(normalizedEmail)
+                            .displayName(displayName)
+                            .role(Role.USER)
+                            .enabled(true)
+                            .isVerified(true)
+                            .build();
+                    return userRepository.save(newUser);
+                });
+
+        if (!user.isEnabled()) {
+            throw new RuntimeException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin!");
+        }
+
+        if (!user.isVerified()) {
+            user.setVerified(true);
+            userRepository.save(user);
+        }
+
+        String token = jwtService.generateToken(user);
         return AuthResponse.builder()
                 .token(token)
                 .username(user.getUsername())
@@ -121,7 +203,6 @@ public class AuthService {
             try {
                 sendPasswordResetEmail(user.getEmail(), token);
             } catch (Exception ignored) {
-                // Không làm lộ trạng thái email; API vẫn trả thông điệp chung.
             }
         });
     }
@@ -144,6 +225,44 @@ public class AuthService {
         passwordResetTokenRepository.save(resetToken);
     }
 
+    @Transactional
+    public void verifyEmail(VerifyEmailRequest request) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        String verificationCode = request.getToken().trim();
+
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new RuntimeException("Email hoặc mã xác thực không đúng"));
+
+        EmailVerificationToken token = emailVerificationTokenRepository.findByToken(verificationCode)
+                .orElseThrow(() -> new RuntimeException("Email hoặc mã xác thực không đúng"));
+
+        if (!token.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("Email hoặc mã xác thực không đúng");
+        }
+
+        if (token.isUsed() || token.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Mã xác thực đã hết hạn hoặc đã được sử dụng");
+        }
+
+        user.setVerified(true);
+        token.setUsed(true);
+        userRepository.save(user);
+        emailVerificationTokenRepository.save(token);
+    }
+
+    @Transactional
+    public void resendVerificationEmail(ResendVerificationRequest request) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản với email này"));
+
+        if (user.isVerified()) {
+            throw new RuntimeException("Email này đã được xác thực");
+        }
+
+        issueEmailVerificationToken(user);
+    }
+
     private String generateSixDigitCode() {
         Random random = new Random();
         String code;
@@ -151,6 +270,67 @@ public class AuthService {
             code = String.format("%06d", random.nextInt(1_000_000));
         } while (passwordResetTokenRepository.existsByToken(code));
         return code;
+    }
+
+    private String buildUniqueUsername(String normalizedEmail) {
+        String localPart = normalizedEmail.split("@")[0].replaceAll("[^a-zA-Z0-9._-]", "");
+        String base = localPart.isBlank() ? "google_user" : localPart;
+        String candidate = base;
+        int suffix = 1;
+        while (userRepository.existsByUsernameIgnoreCase(candidate)) {
+            candidate = base + suffix;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private String generateEmailVerificationCode() {
+        Random random = new Random();
+        String code;
+        do {
+            code = String.format("%06d", random.nextInt(1_000_000));
+        } while (emailVerificationTokenRepository.existsByToken(code));
+        return code;
+    }
+
+    private void issueEmailVerificationToken(User user) {
+        enforceVerificationRateLimits(user);
+
+        List<EmailVerificationToken> activeTokens = emailVerificationTokenRepository.findAllByUserAndUsedFalse(user);
+        activeTokens.forEach(token -> token.setUsed(true));
+        if (!activeTokens.isEmpty()) {
+            emailVerificationTokenRepository.saveAll(activeTokens);
+        }
+
+        String code = generateEmailVerificationCode();
+        EmailVerificationToken verificationToken = EmailVerificationToken.builder()
+                .user(user)
+                .token(code)
+                .expiresAt(LocalDateTime.now().plusMinutes(15))
+                .used(false)
+                .build();
+        emailVerificationTokenRepository.save(verificationToken);
+
+        try {
+            sendEmailVerificationEmail(user.getEmail(), code);
+        } catch (Exception ignored) {
+            throw new RuntimeException("Không thể gửi mã xác thực email. Vui lòng thử lại.");
+        }
+    }
+
+    private void enforceVerificationRateLimits(User user) {
+        LocalDateTime now = LocalDateTime.now();
+        emailVerificationTokenRepository.findTopByUserOrderByCreatedAtDesc(user).ifPresent(lastToken -> {
+            if (lastToken.getCreatedAt() != null && lastToken.getCreatedAt().isAfter(now.minusMinutes(1))) {
+                throw new RuntimeException("Vui lòng đợi 1 phút trước khi yêu cầu lại mã xác thực.");
+            }
+        });
+
+        LocalDateTime startOfDay = now.toLocalDate().atStartOfDay();
+        long todayCount = emailVerificationTokenRepository.countByUserAndCreatedAtBetween(user, startOfDay, now);
+        if (todayCount >= 5) {
+            throw new RuntimeException("Bạn đã yêu cầu mã xác thực quá 5 lần trong ngày.");
+        }
     }
 
     private void sendPasswordResetEmail(String toEmail, String code) {
@@ -162,6 +342,22 @@ public class AuthService {
 
                 Ban vua yeu cau dat lai mat khau tai TimTro.
                 Ma xac nhan cua ban la: %s
+
+                Ma co hieu luc trong 15 phut.
+                Neu ban khong thuc hien yeu cau nay, vui long bo qua email.
+                """.formatted(code));
+        mailSender.send(message);
+    }
+
+    private void sendEmailVerificationEmail(String toEmail, String code) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(toEmail);
+        message.setSubject("TimTro - Xac thuc email dang ky");
+        message.setText("""
+                Xin chao,
+
+                Cam on ban da dang ky tai TimTro.
+                Ma xac thuc email cua ban la: %s
 
                 Ma co hieu luc trong 15 phut.
                 Neu ban khong thuc hien yeu cau nay, vui long bo qua email.

@@ -4,6 +4,22 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { del, get, getAuthToken, post, postFormData, put, setAuthToken, clearAuthToken } from '../apiClient';
 
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (options: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
+          renderButton: (
+            element: HTMLElement,
+            options: { theme?: string; size?: string; text?: string; shape?: string; width?: string | number }
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
 type AuthMode = 'login' | 'register' | 'forgot';
 
 type ApiResponse<T> = {
@@ -13,7 +29,7 @@ type ApiResponse<T> = {
 };
 
 type AuthResponse = {
-  token: string;
+  token?: string | null;
   username: string;
   displayName?: string;
   role: string;
@@ -69,6 +85,9 @@ const AUTH_USER_NAME_KEY = 'auth_user_name';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SIMPLE_PASSWORD_REGEX = /^.{6,}$/;
 const FORGOT_OTP_RATE_LIMIT_SECONDS = 60;
+const VERIFY_OTP_RATE_LIMIT_SECONDS = 60;
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim();
+const GOOGLE_SCRIPT_ID = 'google-identity-services';
 const parseErrorMessage = (error: unknown) => {
   if (!(error instanceof Error)) {
     return 'Đã có lỗi xảy ra.';
@@ -79,7 +98,6 @@ const parseErrorMessage = (error: unknown) => {
       return parsed.message;
     }
   } catch {
-    // keep raw error message
   }
   return error.message || 'Đã có lỗi xảy ra.';
 };
@@ -138,6 +156,9 @@ function Header() {
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [verifyForm, setVerifyForm] = useState({ email: '', code: '' });
+  const [verifyCodeSent, setVerifyCodeSent] = useState(false);
+  const [verifyOtpCooldown, setVerifyOtpCooldown] = useState(0);
   const registerEmailInvalid = registerForm.email.length > 0 && !EMAIL_REGEX.test(registerForm.email);
   const [isPostRoomOpen, setIsPostRoomOpen] = useState(false);
   const [isPostingRoom, setIsPostingRoom] = useState(false);
@@ -177,6 +198,7 @@ function Header() {
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const notificationMenuRef = useRef<HTMLDivElement | null>(null);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   const roomImagePreviews = useMemo(() => roomImages.map((file) => URL.createObjectURL(file)), [roomImages]);
   const fallbackAvatar = useMemo(() => {
@@ -231,7 +253,6 @@ function Header() {
       await put<string>(`/api/notifications/${id}/read`);
       setSystemNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
     } catch {
-      // no-op for menu action
     }
   };
 
@@ -240,7 +261,6 @@ function Header() {
       await put<{ updated: number }>('/api/notifications/read-all');
       setSystemNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
     } catch {
-      // no-op for menu action
     }
   };
 
@@ -250,7 +270,6 @@ function Header() {
       setSystemNotifications((prev) => prev.filter((item) => item.id !== id));
       setSelectedNotificationId(null);
     } catch {
-      // no-op for menu action
     }
   };
 
@@ -260,7 +279,6 @@ function Header() {
       setSystemNotifications([]);
       setSelectedNotificationId(null);
     } catch {
-      // no-op for menu action
     }
   };
 
@@ -332,6 +350,22 @@ function Header() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [forgotOtpCooldown]);
+
+  useEffect(() => {
+    if (verifyOtpCooldown <= 0) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setVerifyOtpCooldown((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [verifyOtpCooldown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -461,6 +495,9 @@ function Header() {
         '/api/auth/login',
         loginForm
       );
+      if (!res?.data?.token) {
+        throw new Error('Không nhận được token đăng nhập từ máy chủ.');
+      }
       setAuthToken(res.data.token);
       const name = res.data.displayName || res.data.username;
       localStorage.setItem(AUTH_USER_NAME_KEY, name);
@@ -468,6 +505,41 @@ function Header() {
       setIsLoggedIn(true);
       window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { loggedIn: true } }));
       setAuthMessage('Đăng nhập thành công.');
+      setTimeout(() => setIsAuthOpen(false), 500);
+    } catch (error) {
+      const message = parseErrorMessage(error);
+      if (message.toLowerCase().includes('xác thực email') || message.toLowerCase().includes('chưa xác thực email')) {
+        const email = loginForm.identifier.trim();
+        if (EMAIL_REGEX.test(email)) {
+          setVerifyForm({ email, code: '' });
+          setVerifyCodeSent(true);
+          setVerifyOtpCooldown(0);
+          setMode('register');
+          setAuthMessage(null);
+        }
+      }
+      setAuthError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitGoogleCredential = async (credential: string) => {
+    try {
+      setIsSubmitting(true);
+      setAuthError(null);
+      setAuthMessage(null);
+      const res = await post<ApiResponse<AuthResponse>, { idToken: string }>('/api/auth/google', { idToken: credential });
+      if (!res?.data?.token) {
+        throw new Error('Không nhận được token đăng nhập từ máy chủ.');
+      }
+      setAuthToken(res.data.token);
+      const name = res.data.displayName || res.data.username;
+      localStorage.setItem(AUTH_USER_NAME_KEY, name);
+      setDisplayName(name);
+      setIsLoggedIn(true);
+      window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { loggedIn: true } }));
+      setAuthMessage('Đăng nhập Google thành công.');
       setTimeout(() => setIsAuthOpen(false), 500);
     } catch (error) {
       setAuthError(parseErrorMessage(error));
@@ -502,6 +574,7 @@ function Header() {
     try {
       setIsSubmitting(true);
       setAuthError(null);
+      setAuthMessage(null);
       const res = await post<
         ApiResponse<AuthResponse>,
         { username: string; displayName: string; email: string; password: string }
@@ -511,14 +584,67 @@ function Header() {
         email: registerForm.email,
         password: registerForm.password,
       });
-      setAuthToken(res.data.token);
-      const name = res.data.displayName || res.data.username;
-      localStorage.setItem(AUTH_USER_NAME_KEY, name);
-      setDisplayName(name);
-      setIsLoggedIn(true);
-      window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { loggedIn: true } }));
-      setAuthMessage('Đăng ký thành công.');
-      setTimeout(() => setIsAuthOpen(false), 500);
+      setVerifyForm({ email: registerForm.email.trim(), code: '' });
+      setVerifyCodeSent(true);
+      setVerifyOtpCooldown(VERIFY_OTP_RATE_LIMIT_SECONDS);
+      setMode('register');
+      setAuthMessage(res.message || 'Đăng ký thành công. Vui lòng kiểm tra email để lấy mã xác thực.');
+    } catch (error) {
+      setAuthError(parseErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const sendVerificationCode = async () => {
+    if (!EMAIL_REGEX.test(verifyForm.email)) {
+      setAuthError('Email không đúng định dạng.');
+      return;
+    }
+    if (verifyOtpCooldown > 0) {
+      setAuthError(`Vui lòng đợi ${verifyOtpCooldown}s trước khi gửi lại mã.`);
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      setAuthError(null);
+      setAuthMessage(null);
+      const res = await post<ApiResponse<null>, { email: string }>('/api/auth/resend-verification', {
+        email: verifyForm.email,
+      });
+      setVerifyCodeSent(true);
+      setVerifyOtpCooldown(VERIFY_OTP_RATE_LIMIT_SECONDS);
+      setAuthMessage(res.message || 'Đã gửi mã xác thực email.');
+    } catch (error) {
+      setAuthError(parseErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitVerifyEmail = async () => {
+    if (!EMAIL_REGEX.test(verifyForm.email)) {
+      setAuthError('Email không đúng định dạng.');
+      return;
+    }
+    if (verifyForm.code.trim().length !== 6) {
+      setAuthError('Mã xác thực phải gồm đúng 6 chữ số.');
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      setAuthError(null);
+      setAuthMessage(null);
+      const res = await post<ApiResponse<null>, { email: string; token: string }>('/api/auth/verify-email', {
+        email: verifyForm.email,
+        token: verifyForm.code.trim(),
+      });
+      setAuthMessage(res.message || 'Xác thực email thành công. Vui lòng đăng nhập.');
+      setMode('login');
+      setLoginForm((prev) => ({ ...prev, identifier: verifyForm.email }));
+      setVerifyCodeSent(false);
+      setVerifyOtpCooldown(0);
+      setVerifyForm({ email: '', code: '' });
     } catch (error) {
       setAuthError(parseErrorMessage(error));
     } finally {
@@ -605,6 +731,59 @@ function Header() {
     window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { loggedIn: false } }));
     navigate('/', { replace: true });
   };
+
+  useEffect(() => {
+    if (!isAuthOpen || mode !== 'login') {
+      return;
+    }
+    if (!GOOGLE_CLIENT_ID) {
+      return;
+    }
+
+    const renderGoogleButton = () => {
+      if (!window.google?.accounts?.id || !googleButtonRef.current) {
+        return;
+      }
+
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          if (response?.credential) {
+            void submitGoogleCredential(response.credential);
+          }
+        },
+      });
+
+      googleButtonRef.current.innerHTML = '';
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        text: 'continue_with',
+        shape: 'pill',
+        width: 320,
+      });
+    };
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+      return;
+    }
+
+    let script = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = GOOGLE_SCRIPT_ID;
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+    script.addEventListener('load', renderGoogleButton, { once: true });
+
+    return () => {
+      script?.removeEventListener('load', renderGoogleButton);
+    };
+  }, [isAuthOpen, mode]);
 
   const openPostRoomModal = () => {
     if (!isLoggedIn) {
@@ -805,7 +984,6 @@ function Header() {
       setIsMapSearching(true);
       setMapSearchError(null);
 
-      // B1: luôn tìm "tâm khu vực" trước để có fallback tốt.
       const areaCandidates = [
         [selectedWard, selectedDistrict, selectedProvince, 'Viet Nam'].filter(Boolean).join(', '),
         [selectedDistrict, selectedProvince, 'Viet Nam'].filter(Boolean).join(', '),
@@ -821,7 +999,6 @@ function Header() {
         setMapZoom(areaZoom);
       }
 
-      // B2: tìm địa chỉ chi tiết, ưu tiên trong bbox của khu vực.
       const detailCandidates = [
         [addressPart, adminPart].filter(Boolean).join(', '),
         inputAddress ? `${inputAddress}, Viet Nam` : '',
@@ -1326,74 +1503,140 @@ function Header() {
                 >
                   {isSubmitting ? 'Đang xử lý...' : 'Đăng nhập'}
                 </button>
+                <div className="relative py-1 text-center text-xs text-neutral-400">
+                  <span className="bg-white px-2">hoặc</span>
+                </div>
+                {GOOGLE_CLIENT_ID ? (
+                  <div className="flex justify-center">
+                    <div ref={googleButtonRef} />
+                  </div>
+                ) : (
+                  <p className="text-center text-xs text-neutral-500">Google login chưa được cấu hình ở frontend.</p>
+                )}
               </div>
             )}
 
             {mode === 'register' && (
               <div className="space-y-3 rounded-2xl border border-orange-100 bg-white p-5 shadow-sm">
-                <p className="text-xl font-bold text-neutral-900">Tạo tài khoản mới</p>
-                <input
-                  className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                  placeholder="Tên đăng nhập"
-                  value={registerForm.username}
-                  onChange={(event) => setRegisterForm((prev) => ({ ...prev, username: event.target.value }))}
-                />
-                <input
-                  className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                  placeholder="Tên hiển thị"
-                  value={registerForm.displayName}
-                  onChange={(event) => setRegisterForm((prev) => ({ ...prev, displayName: event.target.value }))}
-                />
-                <input
-                  type="email"
-                  className={`h-11 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 ${
-                    registerEmailInvalid
-                      ? 'border-red-400 focus:border-red-400 focus:ring-red-100'
-                      : 'border-neutral-300 focus:border-orange-400 focus:ring-orange-100'
-                  }`}
-                  placeholder="Email"
-                  value={registerForm.email}
-                  onChange={(event) => setRegisterForm((prev) => ({ ...prev, email: event.target.value }))}
-                />
-                {registerEmailInvalid && (
-                  <p className="-mt-1 text-xs font-medium text-red-600">Email không đúng định dạng.</p>
+                {!verifyCodeSent ? (
+                  <>
+                    <p className="text-xl font-bold text-neutral-900">Tạo tài khoản mới</p>
+                    <input
+                      className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      placeholder="Tên đăng nhập"
+                      value={registerForm.username}
+                      onChange={(event) => setRegisterForm((prev) => ({ ...prev, username: event.target.value }))}
+                    />
+                    <input
+                      className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      placeholder="Tên hiển thị"
+                      value={registerForm.displayName}
+                      onChange={(event) => setRegisterForm((prev) => ({ ...prev, displayName: event.target.value }))}
+                    />
+                    <input
+                      type="email"
+                      className={`h-11 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 ${
+                        registerEmailInvalid
+                          ? 'border-red-400 focus:border-red-400 focus:ring-red-100'
+                          : 'border-neutral-300 focus:border-orange-400 focus:ring-orange-100'
+                      }`}
+                      placeholder="Email"
+                      value={registerForm.email}
+                      onChange={(event) => setRegisterForm((prev) => ({ ...prev, email: event.target.value }))}
+                    />
+                    {registerEmailInvalid && (
+                      <p className="-mt-1 text-xs font-medium text-red-600">Email không đúng định dạng.</p>
+                    )}
+                    <input
+                      type={showRegisterPassword ? 'text' : 'password'}
+                      className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      placeholder="Mật khẩu (ít nhất 6 ký tự)"
+                      value={registerForm.password}
+                      onChange={(event) => setRegisterForm((prev) => ({ ...prev, password: event.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      className="text-left text-xs font-semibold text-orange-600 hover:text-orange-700"
+                      onClick={() => setShowRegisterPassword((prev) => !prev)}
+                    >
+                      {showRegisterPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    </button>
+                    <input
+                      type={showRegisterConfirmPassword ? 'text' : 'password'}
+                      className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      placeholder="Nhập lại mật khẩu"
+                      value={registerForm.confirmPassword}
+                      onChange={(event) => setRegisterForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      className="text-left text-xs font-semibold text-orange-600 hover:text-orange-700"
+                      onClick={() => setShowRegisterConfirmPassword((prev) => !prev)}
+                    >
+                      {showRegisterConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    </button>
+                    <button
+                      type="button"
+                      className="h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-sm font-semibold text-white shadow-md transition hover:from-orange-600 hover:to-amber-600 disabled:opacity-50"
+                      disabled={isSubmitting || registerEmailInvalid}
+                      onClick={submitRegister}
+                    >
+                      {isSubmitting ? 'Đang xử lý...' : 'Tạo tài khoản'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xl font-bold text-neutral-900">Xác thực email đăng ký</p>
+                    <input
+                      type="email"
+                      className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      placeholder="Email đã đăng ký"
+                      value={verifyForm.email}
+                      onChange={(event) => setVerifyForm((prev) => ({ ...prev, email: event.target.value }))}
+                    />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                      <input
+                        className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        placeholder="Mã xác thực email"
+                        value={verifyForm.code}
+                        onChange={(event) => setVerifyForm((prev) => ({ ...prev, code: event.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="h-11 rounded-xl border border-orange-300 bg-orange-50 px-4 text-sm font-semibold text-orange-700 transition hover:bg-orange-100 disabled:opacity-50"
+                        disabled={isSubmitting || verifyOtpCooldown > 0}
+                        onClick={sendVerificationCode}
+                      >
+                        {isSubmitting
+                          ? 'Đang gửi...'
+                          : verifyOtpCooldown > 0
+                            ? `Gửi lại sau ${verifyOtpCooldown}s`
+                            : 'Gửi lại mã'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-neutral-500">Bạn chỉ có thể gửi lại mã sau mỗi 60 giây.</p>
+                    <button
+                      type="button"
+                      className="h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-sm font-semibold text-white shadow-md transition hover:from-orange-600 hover:to-amber-600 disabled:opacity-50"
+                      disabled={isSubmitting}
+                      onClick={submitVerifyEmail}
+                    >
+                      {isSubmitting ? 'Đang xử lý...' : 'Xác thực email'}
+                    </button>
+                    <button
+                      type="button"
+                      className="h-10 w-full rounded-xl border border-neutral-300 bg-white text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        setVerifyCodeSent(false);
+                        setVerifyOtpCooldown(0);
+                        setVerifyForm({ email: '', code: '' });
+                      }}
+                    >
+                      Quay lại chỉnh thông tin đăng ký
+                    </button>
+                  </>
                 )}
-                <input
-                  type={showRegisterPassword ? 'text' : 'password'}
-                  className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                  placeholder="Mật khẩu (ít nhất 6 ký tự)"
-                  value={registerForm.password}
-                  onChange={(event) => setRegisterForm((prev) => ({ ...prev, password: event.target.value }))}
-                />
-                <button
-                  type="button"
-                  className="text-left text-xs font-semibold text-orange-600 hover:text-orange-700"
-                  onClick={() => setShowRegisterPassword((prev) => !prev)}
-                >
-                  {showRegisterPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                </button>
-                <input
-                  type={showRegisterConfirmPassword ? 'text' : 'password'}
-                  className="h-11 w-full rounded-xl border border-neutral-300 px-4 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                  placeholder="Nhập lại mật khẩu"
-                  value={registerForm.confirmPassword}
-                  onChange={(event) => setRegisterForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
-                />
-                <button
-                  type="button"
-                  className="text-left text-xs font-semibold text-orange-600 hover:text-orange-700"
-                  onClick={() => setShowRegisterConfirmPassword((prev) => !prev)}
-                >
-                  {showRegisterConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                </button>
-                <button
-                  type="button"
-                  className="h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-sm font-semibold text-white shadow-md transition hover:from-orange-600 hover:to-amber-600 disabled:opacity-50"
-                  disabled={isSubmitting || registerEmailInvalid}
-                  onClick={submitRegister}
-                >
-                  {isSubmitting ? 'Đang xử lý...' : 'Tạo tài khoản'}
-                </button>
               </div>
             )}
 
@@ -1455,8 +1698,17 @@ function Header() {
               </div>
             )}
 
-                {authError && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{authError}</p>}
-                {authMessage && <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{authMessage}</p>}
+                {(authError || authMessage) && (
+                  <p
+                    className={`mt-4 rounded-xl border px-3 py-2 text-sm font-medium ${
+                      authError
+                        ? 'border-red-200 bg-red-50 text-red-600'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    }`}
+                  >
+                    {authError ?? authMessage}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -1697,7 +1949,10 @@ function Header() {
                   {roomImagePreviews.length > 0 && (
                     <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
                       {roomImagePreviews.map((previewUrl, index) => (
-                        <div key={`${previewUrl}-${index}`} className="relative overflow-hidden rounded-lg border border-neutral-200">
+                        <div
+                          key={`${previewUrl}-${index}`}
+                          className="relative overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                        >
                           <button
                             type="button"
                             className={`block w-full ${index === primaryPostImageIndex ? 'ring-2 ring-orange-200' : ''}`}
@@ -1713,7 +1968,7 @@ function Header() {
                             />
                           </button>
                           <span
-                            className={`absolute left-1 top-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                            className={`pointer-events-none absolute left-1 top-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
                               index === primaryPostImageIndex
                                 ? 'bg-orange-500 text-white'
                                 : 'bg-white/90 text-neutral-700'
@@ -1727,6 +1982,18 @@ function Header() {
                             onClick={() => removePostRoomImage(index)}
                           >
                             Xóa
+                          </button>
+                          <button
+                            type="button"
+                            className={`w-full border-t px-2 py-1 text-[11px] font-semibold transition ${
+                              index === primaryPostImageIndex
+                                ? 'border-orange-200 bg-orange-50 text-orange-700'
+                                : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
+                            }`}
+                            disabled={index === primaryPostImageIndex}
+                            onClick={() => setPrimaryPostImageIndex(index)}
+                          >
+                            {index === primaryPostImageIndex ? 'Đang là ảnh đại diện' : 'Chọn ảnh này làm đại diện'}
                           </button>
                         </div>
                       ))}

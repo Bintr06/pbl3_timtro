@@ -12,7 +12,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/rooms")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')") // Khóa toàn bộ Controller này cho ADMIN
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminRoomController {
 
     private final RoomService roomService;

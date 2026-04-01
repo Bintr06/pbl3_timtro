@@ -70,7 +70,6 @@ public class AdminUserController {
         user.setEnabled(false);
         userRepository.save(user);
 
-                // Khi khóa người dùng, ẩn toàn bộ bài đăng/phòng của người đó khỏi public.
                 roomRepository.updateStatusByOwnerId(id, RoomStatus.HIDDEN);
         
         return ResponseEntity.ok(new ApiResponse<>(200, "Đã khóa tài khoản người dùng.", null));

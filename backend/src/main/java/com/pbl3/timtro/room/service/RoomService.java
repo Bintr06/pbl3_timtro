@@ -22,13 +22,15 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.time.ZoneId;
 import java.util.stream.Collectors;
 
 @Service
@@ -133,6 +135,11 @@ public class RoomService {
 
     private RoomResponse mapToResponse(Room room, User currentUser, Set<Long> favoriteRoomIds) {
         boolean isFav = currentUser != null && favoriteRoomIds.contains(room.getId());
+        List<RoomImage> orderedImages = room.getImages().stream()
+            .sorted(Comparator
+                .comparing(RoomImage::isPrimary, Comparator.reverseOrder())
+                .thenComparing(RoomImage::getId, Comparator.nullsLast(Long::compareTo)))
+            .toList();
 
         return RoomResponse.builder()
                 .id(room.getId())
@@ -151,7 +158,7 @@ public class RoomService {
                 .ownerId(room.getOwner() != null ? room.getOwner().getId() : null)
                 .ownerName(room.getOwner() != null ? room.getOwner().getDisplayName() : "N/A")
                 .ownerPhone(room.getOwner() != null ? room.getOwner().getPhone() : "N/A")
-                .imageUrls(room.getImages().stream()
+                .imageUrls(orderedImages.stream()
                         .map(RoomImage::getImageUrl)
                         .distinct()
                         .toList())
@@ -161,7 +168,7 @@ public class RoomService {
                 .amenityIds(room.getAmenities().stream()
                         .map(Amenity::getId)
                         .collect(Collectors.toSet()))
-                .createdAt(room.getCreatedAt())
+                .createdAt(room.getCreatedAt() == null ? null : room.getCreatedAt().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toOffsetDateTime())
                 .isFavorite(isFav)
                 .build();
     }
@@ -222,6 +229,9 @@ public class RoomService {
                 cloudinaryService.deleteFile(img.getImageUrl());
             }
         }
+
+        favoriteRepository.deleteAllByRoomId(roomId);
+
         roomRepository.delete(room);
     }
 
@@ -265,13 +275,13 @@ public class RoomService {
         room.setPrice(request.getPrice());
         room.setArea(request.getArea());
         room.setAddress(request.getAddress());
-        room.setProvince(request.getProvince()); // Thêm cái này
-        room.setDistrict(request.getDistrict()); // Thêm cái này
-        room.setWard(request.getWard());         // Thêm cái này
-        room.setLatitude(request.getLatitude());   // Cực kỳ quan trọng
-        room.setLongitude(request.getLongitude()); // Cực kỳ quan trọng
+        room.setProvince(request.getProvince()); 
+        room.setDistrict(request.getDistrict()); 
+        room.setWard(request.getWard());         
+        
+        room.setLatitude(request.getLatitude());
+        room.setLongitude(request.getLongitude()); 
         room.setStatus(RoomStatus.AVAILABLE);
-        room.setCreatedAt(LocalDateTime.now());
 
         if (request.getAmenityIds() != null) {
             Set<Amenity> amenities = new HashSet<>(amenityRepository.findAllById(request.getAmenityIds()));
@@ -286,23 +296,52 @@ public class RoomService {
             cloudinaryService.deleteFile(img.getImageUrl());
             room.removeImage(img);
         }
+        List<String> uploadedNewUrls = new java.util.ArrayList<>();
         if (newFiles != null && !newFiles.isEmpty()) {
             for (MultipartFile file : newFiles) {
                 if (!file.isEmpty()) {
                     String url = cloudinaryService.uploadFile(file, "rooms");
                     room.addImage(RoomImage.builder().imageUrl(url).primary(false).build());
+                    uploadedNewUrls.add(url);
                 }
             }
         }
 
         if (room.getImages() != null && !room.getImages().isEmpty()) {
+            Map<String, Integer> existingOrder = new HashMap<>();
+            if (request.getRemainingImageUrls() != null) {
+                for (int i = 0; i < request.getRemainingImageUrls().size(); i++) {
+                    existingOrder.put(request.getRemainingImageUrls().get(i), i);
+                }
+            }
+            Map<String, Integer> newOrder = new HashMap<>();
+            for (int i = 0; i < uploadedNewUrls.size(); i++) {
+                newOrder.put(uploadedNewUrls.get(i), i);
+            }
+
+            List<RoomImage> orderedImages = room.getImages().stream()
+                    .sorted(Comparator
+                            .comparingInt((RoomImage img) -> {
+                                Integer oldPos = existingOrder.get(img.getImageUrl());
+                                if (oldPos != null) {
+                                    return oldPos;
+                                }
+                                Integer newPos = newOrder.get(img.getImageUrl());
+                                if (newPos != null) {
+                                    return existingOrder.size() + newPos;
+                                }
+                                return Integer.MAX_VALUE;
+                            })
+                            .thenComparing(RoomImage::getId, Comparator.nullsLast(Long::compareTo)))
+                    .toList();
+
             int primaryIndex = request.getPrimaryImageIndex() != null ? request.getPrimaryImageIndex() : 0;
-            if (primaryIndex < 0 || primaryIndex >= room.getImages().size()) {
+            if (primaryIndex < 0 || primaryIndex >= orderedImages.size()) {
                 primaryIndex = 0;
             }
 
-            for (int i = 0; i < room.getImages().size(); i++) {
-                room.getImages().get(i).setPrimary(i == primaryIndex);
+            for (int i = 0; i < orderedImages.size(); i++) {
+                orderedImages.get(i).setPrimary(i == primaryIndex);
             }
         }
 

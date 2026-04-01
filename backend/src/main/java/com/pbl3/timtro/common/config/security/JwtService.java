@@ -20,24 +20,22 @@ import java.util.function.Function;
 public class JwtService {
     @Value("${security.jwt.secret-key}")
     private String secretKey;
-    private static final long JWT_EXPIRATION = 1000 * 60 * 60 * 24; // 24 giờ
+    private static final long JWT_EXPIRATION = 1000 * 60 * 60 * 24;
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
-    // --- PHẦN QUAN TRỌNG: Thêm Role vào Token ---
     public String generateToken(UserDetails userDetails) {
         Map<String, Object> extraClaims = new HashMap<>();
 
-        // Lấy danh sách quyền (Roles) từ userDetails và đưa vào Claims
         var roles = userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .toList();
         extraClaims.put("roles", roles);
 
         return Jwts.builder()
-                .setClaims(extraClaims) // Đưa roles vào payload
+            .setClaims(extraClaims)
                 .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date(System.currentTimeMillis()))
                 .setExpiration(new Date(System.currentTimeMillis() + JWT_EXPIRATION))
