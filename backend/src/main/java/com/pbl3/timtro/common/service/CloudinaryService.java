@@ -34,10 +34,7 @@ public class CloudinaryService {
             return;
         }
 
-<<<<<<< HEAD
         // Only attempt delete for Cloudinary-hosted assets.
-=======
->>>>>>> chore/deploy-readiness-2026-04-01
         if (!url.contains("res.cloudinary.com")) {
             return;
         }

@@ -22,10 +22,7 @@ public class UserService {
         currentUser.setAvatarUrl(url);
         userRepository.save(currentUser);
 
-<<<<<<< HEAD
         // Remove previous avatar from Cloudinary after the new one is persisted.
-=======
->>>>>>> chore/deploy-readiness-2026-04-01
         if (oldAvatarUrl != null && !oldAvatarUrl.isBlank() && !oldAvatarUrl.equals(url)) {
             cloudinaryService.deleteFile(oldAvatarUrl);
         }
