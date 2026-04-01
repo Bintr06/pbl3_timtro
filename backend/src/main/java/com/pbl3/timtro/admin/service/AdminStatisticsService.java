@@ -35,25 +35,19 @@ public class AdminStatisticsService {
     public OverviewStatsDto getOverviewStats() {
         OverviewStatsDto dto = new OverviewStatsDto();
 
-        // Tổng users
         dto.setTotalUsers(userRepository.count());
 
-        // Số phòng AVAILABLE
         dto.setAvailableRooms(
                 roomRepository.findAllByStatus(RoomStatus.AVAILABLE).size());
 
-        // Số report PENDING
         long pendingCount = userReportRepository.countByStatus(UserReportStatus.PENDING);
         dto.setPendingReports(pendingCount);
 
-        // Rating trung bình toàn hệ thống
         Double avgRating = userRatingRepository.getAverageRating();
         dto.setAverageRating(avgRating != null ? avgRating : 0.0);
 
-        // User mới theo ngày (7 ngày gần nhất)
         dto.setNewUsersByDay(getNewUsersByDay(7));
 
-        // Phòng mới theo ngày (7 ngày gần nhất)
         dto.setNewRoomsByDay(getNewRoomsByDay(7));
 
         return dto;

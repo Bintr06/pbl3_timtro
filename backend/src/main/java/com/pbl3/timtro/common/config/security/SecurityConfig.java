@@ -39,31 +39,26 @@ public class SecurityConfig {
                             .filter(value -> !value.isEmpty())
                             .toList();
                     corsConfiguration.setAllowedOriginPatterns(origins);
-                    corsConfiguration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")); // Thêm PATCH cho duyệt đơn
+                    corsConfiguration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
                     corsConfiguration.setAllowedHeaders(java.util.List.of("*"));
                     corsConfiguration.setAllowCredentials(true);
                     return corsConfiguration;
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Công khai hoàn toàn
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/rooms/**").permitAll() // Cho phép xem danh sách và chi tiết phòng
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/google", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/verify-email", "/api/auth/resend-verification").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/rooms/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
-                        // 2. Quyền Admin
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                        // 3. Quyền User đã đăng nhập (Đăng bài, sửa bài)
                         .requestMatchers(HttpMethod.POST, "/api/rooms/**").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/rooms/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/rooms/**").authenticated()
 
-                        // 4. Quyền User đã đăng nhập (Chat, Favorite, Rating)
                         .requestMatchers("/api/chat/**").authenticated()
                         .requestMatchers("/api/favorites/**").authenticated()
                         .requestMatchers("/api/users/**").authenticated()
 
-                        // 5. Tất cả các request khác
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { del, get, post, put } from '../apiClient';
 
@@ -85,6 +85,9 @@ type LowRatedUser = {
   avgRating: number;
   ratingCount: number;
 };
+
+type LowRatedUserRow = [number, string, string, number | string, number | string];
+
 type NotificationUserOption = {
   id: number;
   username: string;
@@ -193,7 +196,6 @@ const formatUsersError = (error: unknown) => {
       }
     }
   } catch {
-    // keep fallback below
   }
 
   return raw;
@@ -348,21 +350,21 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const loadLowRatedUsers = async () => {
+  const loadLowRatedUsers = useCallback(async () => {
     try {
-      const response = await get<Object[]>(`/api/admin/ratings/low-rated-users?maxStars=${lowRatedMaxStars}`);
-      const formatted: LowRatedUser[] = response.map((item: any) => ({
+      const response = await get<LowRatedUserRow[]>(`/api/admin/ratings/low-rated-users?maxStars=${lowRatedMaxStars}`);
+      const formatted: LowRatedUser[] = response.map((item) => ({
         userId: item[0],
         username: item[1],
         displayName: item[2],
-        avgRating: parseFloat(item[3]),
-        ratingCount: parseInt(item[4]),
+        avgRating: Number(item[3]),
+        ratingCount: Number(item[4]),
       }));
       setLowRatedUsers(formatted);
     } catch {
       setLowRatedUsers([]);
     }
-  };
+  }, [lowRatedMaxStars]);
 
   const deleteRating = async (ratingId: number) => {
     const ok = window.confirm('Xóa đánh giá này?');
@@ -375,7 +377,6 @@ export default function AdminDashboardPage() {
       await del<void>(`/api/admin/ratings/${ratingId}`);
       await loadRatings(ratingSearchUsername);
     } catch {
-      // no-op
     } finally {
       setDeletingRatingId(null);
     }
@@ -411,7 +412,6 @@ export default function AdminDashboardPage() {
 
       await loadAllUsers();
     } catch {
-      // no-op
     } finally {
       setLockingUserId(null);
     }
@@ -512,13 +512,13 @@ export default function AdminDashboardPage() {
     if (activeSection === 'rooms') {
       void loadAdminRooms();
     }
-  }, [activeSection]);
+  }, [activeSection, loadLowRatedUsers]);
 
   useEffect(() => {
     if (activeSection === 'ratings') {
       void loadLowRatedUsers();
     }
-  }, [lowRatedMaxStars, activeSection]);
+  }, [activeSection, loadLowRatedUsers]);
 
   useEffect(() => {
     const loadAdminProfile = async () => {
@@ -685,7 +685,6 @@ export default function AdminDashboardPage() {
       await put<string>(`/api/admin/reports/users/${reportId}/status?status=${status}`);
       await loadUserReports();
     } catch {
-      // no-op
     } finally {
       setReportActionId(null);
     }

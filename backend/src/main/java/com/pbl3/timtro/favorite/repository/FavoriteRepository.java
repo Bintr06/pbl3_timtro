@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface FavoriteRepository extends JpaRepository<Favorite, Long> {
     Optional<Favorite> findByUserIdAndRoomId(Long userId, Long roomId);
     List<Favorite> findAllByUserId(Long userId);
+    void deleteAllByRoomId(Long roomId);
     boolean existsByUserIdAndRoomId(Long userId, Long roomId);
 
     @Query("SELECT f.room.id FROM Favorite f WHERE f.user.id = :userId AND f.room.id IN :roomIds")

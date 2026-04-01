@@ -21,10 +21,10 @@ public class CloudinaryService {
                     ObjectUtils.asMap(
                             "folder", "pbl3_timtro/" + folderName,
                             "resource_type", "auto",
-                            "quality", "auto",     // Tự động nén ảnh mà không giảm chất lượng đáng kể
-                            "fetch_format", "auto" // Tự động chuyển sang định dạng nhẹ như WebP nếu trình duyệt hỗ trợ
+                            "quality", "auto",
+                            "fetch_format", "auto"
                     ));
-            return uploadResult.get("secure_url").toString(); // Nên dùng secure_url (https) thay vì url (http)
+                    return uploadResult.get("secure_url").toString();
         } catch (IOException e) {
             throw new RuntimeException("Upload ảnh thất bại: " + e.getMessage());
         }
@@ -34,7 +34,10 @@ public class CloudinaryService {
             return;
         }
 
+<<<<<<< HEAD
         // Only attempt delete for Cloudinary-hosted assets.
+=======
+>>>>>>> chore/deploy-readiness-2026-04-01
         if (!url.contains("res.cloudinary.com")) {
             return;
         }

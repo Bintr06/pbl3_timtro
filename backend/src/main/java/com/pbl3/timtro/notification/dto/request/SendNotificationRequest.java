@@ -8,6 +8,6 @@ import java.util.List;
 public class SendNotificationRequest {
     private String title;
     private String content;
-    private String targetType; // ALL | USERS
+    private String targetType;
     private List<Long> recipientUserIds;
 }

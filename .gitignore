@@ -14,6 +14,7 @@ logs/
 
 # Backend development configuration (contains local credentials)
 backend/src/main/resources/application-dev.properties
+backend/src/main/resources/application*.local.properties
 
 # Backend build output
 backend/target/

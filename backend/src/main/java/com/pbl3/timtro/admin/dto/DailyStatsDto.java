@@ -8,6 +8,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class DailyStatsDto {
-    private String date; // yyyy-MM-dd
+    private String date;
     private long count;
 }

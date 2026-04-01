@@ -17,7 +17,6 @@ import java.util.List;
 public class FavoriteController {
     private final FavoriteService favoriteService;
 
-    // API: Bấm để thích hoặc bỏ thích
     @PostMapping("/{roomId}")
     public ResponseEntity<ApiResponse<String>> toggleFavorite(
             @PathVariable Long roomId,
@@ -26,7 +25,6 @@ public class FavoriteController {
         return ResponseEntity.ok(new ApiResponse<>(200, "Thực hiện thao tác thành công", null));
     }
 
-    // API: Lấy danh sách các phòng tôi đã thích
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<List<RoomResponse>>> getMyFavorites(
             @AuthenticationPrincipal User user) {

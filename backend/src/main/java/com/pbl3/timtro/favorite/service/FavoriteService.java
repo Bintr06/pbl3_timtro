@@ -18,14 +18,14 @@ import java.util.List;
 public class FavoriteService {
     private final FavoriteRepository favoriteRepository;
     private final RoomRepository roomRepository;
-    private final RoomService roomService; // Inject để dùng hàm mapToResponse
+    private final RoomService roomService;
 
     @Transactional
     public void toggleFavorite(Long roomId, User user) {
         favoriteRepository.findByUserIdAndRoomId(user.getId(), roomId)
                 .ifPresentOrElse(
-                        favoriteRepository::delete, // Nếu tìm thấy -> Xóa (Bỏ thích)
-                        () -> { // Nếu không thấy -> Thêm mới (Thích)
+                    favoriteRepository::delete,
+                    () -> {
                             Room room = roomRepository.findById(roomId)
                                     .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
                             favoriteRepository.save(Favorite.builder()

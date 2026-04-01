@@ -2,9 +2,12 @@ package com.pbl3.timtro.auth.controller;
 
 import com.pbl3.timtro.auth.dto.request.ChangePasswordRequest;
 import com.pbl3.timtro.auth.dto.request.ForgotPasswordRequest;
+import com.pbl3.timtro.auth.dto.request.GoogleLoginRequest;
 import com.pbl3.timtro.auth.dto.request.LoginRequest;
+import com.pbl3.timtro.auth.dto.request.ResendVerificationRequest;
 import com.pbl3.timtro.auth.dto.request.RegisterRequest;
 import com.pbl3.timtro.auth.dto.request.ResetPasswordRequest;
+import com.pbl3.timtro.auth.dto.request.VerifyEmailRequest;
 import com.pbl3.timtro.auth.dto.response.AuthResponse;
 import com.pbl3.timtro.auth.service.AuthService;
 import com.pbl3.timtro.common.dto.ApiResponse;
@@ -31,7 +34,7 @@ public class AuthController {
         return ResponseEntity.ok(
                 ApiResponse.<AuthResponse>builder()
                         .status(200)
-                        .message("Đăng ký thành công")
+                        .message("Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản")
                         .data(authService.register(request))
                         .build()
         );
@@ -48,6 +51,17 @@ public class AuthController {
                         .build()
         );
     }
+
+        @PostMapping("/google")
+        public ResponseEntity<ApiResponse<AuthResponse>> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+                return ResponseEntity.ok(
+                                ApiResponse.<AuthResponse>builder()
+                                                .status(200)
+                                                .message("Đăng nhập Google thành công")
+                                                .data(authService.loginWithGoogle(request))
+                                                .build()
+                );
+        }
 
     @PostMapping("/change-password")
     public ResponseEntity<ApiResponse<String>> changePassword(
@@ -77,6 +91,26 @@ public class AuthController {
         authService.resetPassword(request);
         return ResponseEntity.ok(
                 new ApiResponse<>(200, "Đặt lại mật khẩu thành công", null)
+        );
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<ApiResponse<String>> verifyEmail(
+            @Valid @RequestBody VerifyEmailRequest request
+    ) {
+        authService.verifyEmail(request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(200, "Xác thực email thành công. Bạn có thể đăng nhập.", null)
+        );
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<ApiResponse<String>> resendVerification(
+            @Valid @RequestBody ResendVerificationRequest request
+    ) {
+        authService.resendVerificationEmail(request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(200, "Đã gửi lại mã xác thực email.", null)
         );
     }
 }

@@ -3,6 +3,17 @@
 .leaflet-container {
   height: 500px;
   width: 100%;
+  z-index: 1;
+  position: relative;
+}
+
+.leaflet-pane,
+.leaflet-control-container {
+  z-index: 2;
+}
+
+.leaflet-control {
+  z-index: 3;
 }
 
 .timtro-room-marker {
@@ -71,4 +82,23 @@
 body {
   margin: 0;
   background: #f8fafc;
+}
+
+button,
+a,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+select,
+summary,
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
 }

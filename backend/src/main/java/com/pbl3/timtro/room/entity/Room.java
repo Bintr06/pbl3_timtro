@@ -38,10 +38,10 @@ public class Room {
     @Column(nullable = false)
     private Double area;
     private String address;
-    private String province; //tinh,tp
-    private String district; //quan,huyen
-    private String ward;     //phuong,xa
-    private String streetDetail; //so nha, ten duong
+    private String province;
+    private String district;
+    private String ward;
+    private String streetDetail;
 
     private Double latitude;
     private Double longitude;
