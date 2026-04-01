@@ -593,18 +593,6 @@ function App() {
     }));
   }, [rooms]);
 
-  const searchableRooms = useMemo<SearchableRoom[]>(() => {
-    return rooms.map((room) => ({
-      ...room,
-      searchAddress: normalizeLocation(
-        `${room.address ?? ''} ${room.ward ?? ''} ${room.district ?? ''} ${room.province ?? ''}`
-      ),
-      searchAmenityText: normalize(`${getRoomAmenityNames(room).join(' ')} ${room.description ?? ''}`),
-      searchTitle: normalize(room.title ?? ''),
-      priceValue: room.price ?? 0,
-    }));
-  }, [rooms]);
-
   const filteredRooms = useMemo(() => {
     const normalizedAppliedProvince = normalizeLocation(appliedProvinceName);
     const normalizedAppliedDistrict = normalizeLocation(appliedDistrictName);
