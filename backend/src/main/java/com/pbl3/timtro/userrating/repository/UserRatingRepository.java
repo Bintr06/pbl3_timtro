@@ -21,6 +21,9 @@ public interface UserRatingRepository extends JpaRepository<UserRating, Long> {
     @Query("SELECT CAST(AVG(ur.stars) AS java.lang.Double) FROM UserRating ur WHERE ur.ratedUser.id = :userId")
     Double getAverageRatingForUser(@Param("userId") Long userId);
 
+    @Query("SELECT ur.ratedUser.id, CAST(AVG(ur.stars) AS java.lang.Double) FROM UserRating ur GROUP BY ur.ratedUser.id")
+    List<Object[]> getAverageRatingGroupedByRatedUserId();
+
     @Query("SELECT u.id, u.username, u.displayName, CAST(AVG(ur.stars) AS DOUBLE) as avgRating, COUNT(ur) as ratingCount " +
            "FROM UserRating ur " +
            "JOIN ur.ratedUser u " +

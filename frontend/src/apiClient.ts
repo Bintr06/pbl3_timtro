@@ -1,16 +1,27 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 const TOKEN_KEY = 'auth_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+let refreshInFlight: Promise<boolean> | null = null;
 
 export function setAuthToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+export function setRefreshToken(token: string) {
+  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+}
+
 export function clearAuthToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export function getAuthToken() {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getRefreshToken() {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 async function parseResponse<T>(res: Response): Promise<T> {
@@ -27,7 +38,72 @@ async function parseResponse<T>(res: Response): Promise<T> {
   return text as unknown as T;
 }
 
-async function request<T>(input: string, init?: RequestInit): Promise<T> {
+function shouldSkipRefresh(path: string): boolean {
+  return [
+    '/api/auth/login',
+    '/api/auth/register',
+    '/api/auth/google',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password',
+    '/api/auth/verify-email',
+    '/api/auth/resend-verification',
+    '/api/auth/refresh',
+    '/api/auth/logout',
+  ].some((item) => path.startsWith(item));
+}
+
+async function refreshAccessTokenInternal(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    clearAuthToken();
+    return false;
+  }
+
+  const refreshUrl = API_BASE_URL ? `${API_BASE_URL}/api/auth/refresh` : '/api/auth/refresh';
+  const res = await fetch(refreshUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  if (!res.ok) {
+    clearAuthToken();
+    return false;
+  }
+
+  const body = await parseResponse<{
+    data?: {
+      token?: string;
+      refreshToken?: string;
+    };
+  }>(res);
+
+  const nextAccessToken = body?.data?.token;
+  const nextRefreshToken = body?.data?.refreshToken;
+
+  if (!nextAccessToken || !nextRefreshToken) {
+    clearAuthToken();
+    return false;
+  }
+
+  setAuthToken(nextAccessToken);
+  setRefreshToken(nextRefreshToken);
+  return true;
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = refreshAccessTokenInternal().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function request<T>(input: string, init?: RequestInit, canRetry = true): Promise<T> {
   const url = API_BASE_URL
     ? `${API_BASE_URL}${input}`
     : input;
@@ -42,6 +118,13 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
     credentials: 'include',
     ...init,
   });
+
+  if (res.status === 401 && canRetry && !shouldSkipRefresh(input)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      return request<T>(input, init, false);
+    }
+  }
 
   if (!res.ok) {
     const contentType = res.headers.get('content-type') ?? '';
@@ -85,7 +168,7 @@ export function del<T, B = unknown>(path: string, body?: B): Promise<T> {
 export async function putFormData<T>(path: string, formData: FormData): Promise<T> {
   const url = API_BASE_URL ? `${API_BASE_URL}${path}` : path;
   const token = getAuthToken();
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     method: 'PUT',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -93,6 +176,21 @@ export async function putFormData<T>(path: string, formData: FormData): Promise<
     credentials: 'include',
     body: formData,
   });
+
+  if (res.status === 401 && !shouldSkipRefresh(path)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const nextToken = getAuthToken();
+      res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          ...(nextToken ? { Authorization: `Bearer ${nextToken}` } : {}),
+        },
+        credentials: 'include',
+        body: formData,
+      });
+    }
+  }
 
   if (!res.ok) {
     const contentType = res.headers.get('content-type') ?? '';
@@ -111,7 +209,7 @@ export async function putFormData<T>(path: string, formData: FormData): Promise<
 export async function postFormData<T>(path: string, formData: FormData): Promise<T> {
   const url = API_BASE_URL ? `${API_BASE_URL}${path}` : path;
   const token = getAuthToken();
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -119,6 +217,21 @@ export async function postFormData<T>(path: string, formData: FormData): Promise
     credentials: 'include',
     body: formData,
   });
+
+  if (res.status === 401 && !shouldSkipRefresh(path)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const nextToken = getAuthToken();
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(nextToken ? { Authorization: `Bearer ${nextToken}` } : {}),
+        },
+        credentials: 'include',
+        body: formData,
+      });
+    }
+  }
 
   if (!res.ok) {
     const contentType = res.headers.get('content-type') ?? '';

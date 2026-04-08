@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 
@@ -16,12 +17,14 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
         @Query("SELECT DISTINCT r FROM Room r " +
                         "LEFT JOIN FETCH r.owner " +
                         "LEFT JOIN FETCH r.images " +
+                        "LEFT JOIN FETCH r.amenities " +
                         "ORDER BY r.createdAt DESC")
         List<Room> findAllWithImagesAndAmenitiesForAdmin();
 
     @Query("SELECT DISTINCT r FROM Room r " +
             "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
+            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.status = 'AVAILABLE' " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllAvailableWithImagesAndAmenities();
@@ -34,6 +37,7 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     @Query("SELECT DISTINCT r FROM Room r " +
             "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
+            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.status = :status " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByStatus(@Param("status") RoomStatus status);
@@ -41,6 +45,7 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     @Query("SELECT DISTINCT r FROM Room r " +
             "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
+            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.owner.id = :ownerId " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByOwnerId(@Param("ownerId") Long ownerId);
@@ -48,6 +53,7 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     @Query("SELECT DISTINCT r FROM Room r " +
             "LEFT JOIN FETCH r.owner " +
             "LEFT JOIN FETCH r.images " +
+            "LEFT JOIN FETCH r.amenities " +
             "WHERE r.owner.id = :ownerId AND r.status IN :statuses " +
             "ORDER BY r.createdAt DESC")
     List<Room> findAllByOwnerIdAndStatuses(@Param("ownerId") Long ownerId, @Param("statuses") Set<RoomStatus> statuses);
@@ -61,4 +67,11 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
         int migratePendingToAvailable();
 
     long countByCreatedAtBetween(java.time.LocalDateTime startDate, java.time.LocalDateTime endDate);
+        long countByStatus(RoomStatus status);
+
+        @Query(value = "SELECT DATE(r.created_at) AS day, COUNT(*) AS cnt FROM rooms r " +
+                        "WHERE r.created_at >= :fromDateTime AND r.created_at < :toDateTime " +
+                        "GROUP BY DATE(r.created_at)", nativeQuery = true)
+        List<Object[]> countRoomsGroupedByDate(@Param("fromDateTime") LocalDateTime fromDateTime,
+                                                                                   @Param("toDateTime") LocalDateTime toDateTime);
 }

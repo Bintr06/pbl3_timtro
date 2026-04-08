@@ -245,21 +245,6 @@ const buildDailyTrend = (dates: Array<string | undefined>, days: StatsRange) => 
   return labels.map((key) => ({ date: key, count: countsByDate.get(key) ?? 0 }));
 };
 
-const downloadCsv = (filename: string, rows: string[][]) => {
-  const csv = rows
-    .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
-
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -758,41 +743,6 @@ export default function AdminDashboardPage() {
     return { users, rooms: roomsCount, reports: reportsCount };
   }, [usersTrend, roomsTrend, reportsTrend]);
 
-  const exportStatsCsv = () => {
-    const generatedAt = new Date().toLocaleString('vi-VN');
-    const rows: string[][] = [
-      ['Nhóm', 'Chỉ số', 'Giá trị'],
-      ['Tổng quan', 'Khoảng thời gian', `${statsRange} ngày`],
-      ['Tổng quan', 'Thời điểm xuất', generatedAt],
-      ['Người dùng', 'Tổng người dùng', String(userSystemSummary.total)],
-      ['Người dùng', 'Đang hoạt động', String(userSystemSummary.active)],
-      ['Người dùng', 'Đã khóa', String(userSystemSummary.locked)],
-      ['Tin đăng', 'Tổng tin đăng', String(statusSummary.total)],
-      ['Tin đăng', 'AVAILABLE', String(statusSummary.available)],
-      ['Tin đăng', 'RENTED', String(statusSummary.rented)],
-      ['Tin đăng', 'HIDDEN', String(statusSummary.hidden)],
-      ['Báo cáo', 'Tổng báo cáo', String(reportSummary.total)],
-      ['Báo cáo', 'Đang chờ', String(reportSummary.pending)],
-      ['Báo cáo', 'Đã xử lý', String(reportSummary.resolved)],
-      ['Báo cáo', 'Từ chối', String(reportSummary.rejected)],
-      ['Xu hướng theo ngày', 'Ngày', 'Người dùng mới | Tin đăng mới | Báo cáo mới'],
-    ];
-
-    usersTrend.forEach((day, index) => {
-      rows.push([
-        'Xu hướng theo ngày',
-        day.date,
-        `${day.count} | ${roomsTrend[index]?.count ?? 0} | ${reportsTrend[index]?.count ?? 0}`,
-      ]);
-    });
-
-    topProvinces.forEach((item, index) => {
-      rows.push(['Top khu vực', `#${index + 1} ${item.province}`, String(item.count)]);
-    });
-
-    downloadCsv(`timtro-thong-ke-${statsRange}ngay.csv`, rows);
-  };
-
   const statsBusy = loading || loadingUsers || loadingReports || loadingOverview;
 
   const filteredReports = useMemo(() => {
@@ -853,6 +803,19 @@ export default function AdminDashboardPage() {
     });
   }, [notificationUsers, notificationRecipientSearch]);
 
+  const trendPeak = useMemo(() => {
+    return Math.max(
+      1,
+      ...usersTrend.map((item) => item.count),
+      ...roomsTrend.map((item) => item.count),
+      ...reportsTrend.map((item) => item.count)
+    );
+  }, [usersTrend, roomsTrend, reportsTrend]);
+
+  const trendYAxisTicks = useMemo(() => {
+    return [1, 0.75, 0.5, 0.25, 0].map((ratio) => Math.round(trendPeak * ratio));
+  }, [trendPeak]);
+
   const refreshActiveSection = () => {
     if (activeSection === 'overview') {
       void loadOverviewStats();
@@ -890,9 +853,9 @@ export default function AdminDashboardPage() {
 
 
   return (
-    <section className="relative min-h-[calc(100vh-76px)] w-full overflow-hidden bg-[radial-gradient(circle_at_10%_20%,#fff7ed_0%,#f8fafc_45%,#eef2ff_100%)]">
+    <section className="relative min-h-[calc(100vh-76px)] w-full overflow-x-hidden bg-[radial-gradient(circle_at_10%_20%,#fff7ed_0%,#f8fafc_45%,#eef2ff_100%)]">
       <div className="grid min-h-[calc(100vh-76px)] grid-cols-1 lg:grid-cols-[300px_1fr]">
-        <aside className="border-r border-slate-200/80 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 p-5 text-white shadow-2xl lg:sticky lg:top-[76px] lg:h-[calc(100vh-76px)] lg:overflow-y-auto">
+        <aside className="border-r border-slate-200/80 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 p-5 text-white shadow-2xl lg:h-[calc(100vh-76px)] lg:overflow-y-auto">
           <div className="flex flex-col items-center rounded-3xl border border-white/20 bg-white/10 p-5 backdrop-blur-sm">
             <img
               src={
@@ -960,16 +923,6 @@ export default function AdminDashboardPage() {
                     ))}
                   </div>
                 )}
-                {activeSection === 'stats' && (
-                  <button
-                    type="button"
-                    className="inline-flex h-10 items-center justify-center rounded-xl border border-neutral-300 bg-white px-3 text-sm font-semibold text-neutral-700 transition hover:-translate-y-0.5 hover:bg-neutral-50"
-                    onClick={exportStatsCsv}
-                    disabled={statsBusy}
-                  >
-                    Xuất CSV
-                  </button>
-                )}
                 <button
                   type="button"
                   className="inline-flex h-10 items-center justify-center rounded-xl border border-neutral-300 bg-white px-3 text-sm font-semibold text-neutral-700 transition hover:-translate-y-0.5 hover:bg-neutral-50"
@@ -1003,22 +956,22 @@ export default function AdminDashboardPage() {
               ) : overviewStats ? (
                 <>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-                    <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-                      <p className="text-xs text-neutral-500">Tổng người dùng</p>
-                      <p className="mt-2 text-3xl font-extrabold text-blue-700">{overviewStats.totalUsers}</p>
+                    <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm">
+                      <p className="text-xs font-semibold text-blue-600">Tổng tài khoản</p>
+                      <p className="mt-2 text-3xl font-extrabold text-blue-800">{overviewStats.totalUsers}</p>
                     </div>
-                    <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-                      <p className="text-xs text-neutral-500">Phòng đang đăng</p>
-                      <p className="mt-2 text-3xl font-extrabold text-emerald-700">{overviewStats.availableRooms}</p>
+                    <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+                      <p className="text-xs font-semibold text-emerald-600">Tin đang đăng</p>
+                      <p className="mt-2 text-3xl font-extrabold text-emerald-800">{overviewStats.availableRooms}</p>
                     </div>
-                    <div className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm">
-                      <p className="text-xs text-neutral-500">Báo cáo chưa xử lí</p>
-                      <p className="mt-2 text-3xl font-extrabold text-red-700">{overviewStats.pendingReports}</p>
+                    <div className="rounded-2xl border border-red-200 bg-gradient-to-br from-red-50 to-white p-4 shadow-sm">
+                      <p className="text-xs font-semibold text-red-600">Báo cáo chưa xử lí</p>
+                      <p className="mt-2 text-3xl font-extrabold text-red-800">{overviewStats.pendingReports}</p>
                     </div>
-                    <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-                      <p className="text-xs text-neutral-500">Rating trung bình</p>
+                    <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+                      <p className="text-xs font-semibold text-amber-600">Rating trung bình</p>
                       <p className="mt-2 flex items-baseline gap-1">
-                        <span className="text-3xl font-extrabold text-amber-700">{overviewStats.averageRating.toFixed(1)}</span>
+                        <span className="text-3xl font-extrabold text-amber-800">{overviewStats.averageRating.toFixed(1)}</span>
                         <span className="text-lg text-amber-600">★</span>
                       </p>
                     </div>
@@ -1754,25 +1707,72 @@ export default function AdminDashboardPage() {
                           +{periodSummary.users} người dùng | +{periodSummary.rooms} tin đăng | +{periodSummary.reports} báo cáo
                         </p>
                       </div>
-                      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                          <p className="mb-2 text-xs font-semibold text-neutral-600">Người dùng mới</p>
-                          <div className="flex h-32 items-end gap-1">
-                            {usersTrend.map((d) => {
-                              const max = Math.max(...usersTrend.map((x) => x.count), 1);
-                              const h = (d.count / max) * 100;
-                              return <div key={`u-${d.date}`} className="flex-1 rounded-t bg-indigo-500" style={{ height: `${Math.max(h, 3)}%` }} title={`${d.date}: ${d.count}`} />;
-                            })}
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">
+                          <span className="h-2 w-2 rounded-full bg-indigo-500" /> Người dùng mới
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-blue-700">
+                          <span className="h-2 w-2 rounded-full bg-blue-500" /> Tin đăng mới
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-rose-700">
+                          <span className="h-2 w-2 rounded-full bg-rose-500" /> Báo cáo mới
+                        </span>
+                      </div>
+                      <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 pb-2 pt-3">
+                        <div className="grid grid-cols-[auto_1fr] gap-2">
+                          <div className="flex h-52 flex-col justify-between pb-5 pr-2 text-[10px] font-semibold text-neutral-500">
+                            {trendYAxisTicks.map((tick, index) => (
+                              <span key={`tick-${index}`}>{tick}</span>
+                            ))}
                           </div>
-                        </div>
-                        <div>
-                          <p className="mb-2 text-xs font-semibold text-neutral-600">Tin đăng mới</p>
-                          <div className="flex h-32 items-end gap-1">
-                            {roomsTrend.map((d) => {
-                              const max = Math.max(...roomsTrend.map((x) => x.count), 1);
-                              const h = (d.count / max) * 100;
-                              return <div key={`r-${d.date}`} className="flex-1 rounded-t bg-blue-500" style={{ height: `${Math.max(h, 3)}%` }} title={`${d.date}: ${d.count}`} />;
-                            })}
+                          <div>
+                            <div className="relative h-52">
+                              <div className="absolute inset-0 flex flex-col justify-between">
+                                {[0, 1, 2, 3, 4].map((line) => (
+                                  <div key={`grid-${line}`} className="border-t border-dashed border-neutral-200" />
+                                ))}
+                              </div>
+                              <div className="absolute inset-0 flex items-end gap-1">
+                                {usersTrend.map((day, index) => {
+                                  const userHeight = (day.count / trendPeak) * 100;
+                                  const roomCount = roomsTrend[index]?.count ?? 0;
+                                  const roomHeight = (roomCount / trendPeak) * 100;
+                                  const reportCount = reportsTrend[index]?.count ?? 0;
+                                  const reportHeight = (reportCount / trendPeak) * 100;
+
+                                  return (
+                                    <div key={`trend-${day.date}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                                      <div className="flex h-full w-full items-end justify-center gap-[3px]">
+                                        <div
+                                          className="w-[28%] rounded-t bg-indigo-500"
+                                          style={{ height: `${Math.max(userHeight, day.count > 0 ? 3 : 0)}%` }}
+                                          title={`${day.date} | Người dùng mới: ${day.count}`}
+                                        />
+                                        <div
+                                          className="w-[28%] rounded-t bg-blue-500"
+                                          style={{ height: `${Math.max(roomHeight, roomCount > 0 ? 3 : 0)}%` }}
+                                          title={`${day.date} | Tin đăng mới: ${roomCount}`}
+                                        />
+                                        <div
+                                          className="w-[28%] rounded-t bg-rose-500"
+                                          style={{ height: `${Math.max(reportHeight, reportCount > 0 ? 3 : 0)}%` }}
+                                          title={`${day.date} | Báo cáo mới: ${reportCount}`}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div className="mt-2 flex gap-1 text-[10px] text-neutral-500">
+                              {usersTrend.map((day, index) => (
+                                <div key={`label-${day.date}`} className="min-w-0 flex-1 truncate text-center">
+                                  {index % Math.ceil(usersTrend.length / 7 || 1) === 0 || index === usersTrend.length - 1
+                                    ? day.date.slice(5)
+                                    : ''}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>

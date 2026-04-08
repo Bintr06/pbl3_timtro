@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Locale;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -21,8 +23,6 @@ public class UserService {
         String url = cloudinaryService.uploadFile(file, "avatars");
         currentUser.setAvatarUrl(url);
         userRepository.save(currentUser);
-
-        // Remove previous avatar from Cloudinary after the new one is persisted.
         if (oldAvatarUrl != null && !oldAvatarUrl.isBlank() && !oldAvatarUrl.equals(url)) {
             cloudinaryService.deleteFile(oldAvatarUrl);
         }
@@ -31,9 +31,16 @@ public class UserService {
     }
     @Transactional
     public UserResponse updateProfile(User currentUser, UserUpdateRequest request) {
-        if (request.getDisplayName() != null) currentUser.setDisplayName(request.getDisplayName());
+        if (request.getDisplayName() != null) currentUser.setDisplayName(request.getDisplayName().trim());
         if (request.getPhone() != null) currentUser.setPhone(request.getPhone());
-        if (request.getEmail() != null) currentUser.setEmail(request.getEmail());
+        if (request.getEmail() != null) {
+            String normalizedEmail = request.getEmail().trim().toLowerCase(Locale.ROOT);
+            if (!normalizedEmail.equalsIgnoreCase(currentUser.getEmail())
+                    && userRepository.existsByEmailIgnoreCaseAndIdNot(normalizedEmail, currentUser.getId())) {
+                throw new RuntimeException("Email đã được sử dụng!");
+            }
+            currentUser.setEmail(normalizedEmail);
+        }
         if (request.getBio() != null) currentUser.setBio(request.getBio());
         if (request.getAddress() != null) currentUser.setAddress(request.getAddress());
         if (request.getNickname() != null) currentUser.setNickname(request.getNickname());
@@ -63,7 +70,6 @@ public class UserService {
                 .createdAt(user.getCreatedAt())
                 .build();
     }
-
     public UserResponse getProfileById(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng."));

@@ -11,6 +11,12 @@ spring.jpa.show-sql=true
 
 # JWT Secret Key (min 32 characters, base64 encoded)
 security.jwt.secret-key=${JWT_SECRET_KEY:MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=}
+security.jwt.access-expiration-ms=${JWT_ACCESS_EXPIRATION_MS:900000}
+security.jwt.refresh-expiration-ms=${JWT_REFRESH_EXPIRATION_MS:2592000000}
+
+# Refresh token cleanup scheduler
+app.auth.refresh-token.cleanup.fixed-delay-ms=${REFRESH_TOKEN_CLEANUP_FIXED_DELAY_MS:21600000}
+app.auth.refresh-token.cleanup.initial-delay-ms=${REFRESH_TOKEN_CLEANUP_INITIAL_DELAY_MS:120000}
 
 # Cloudinary Configuration (for image storage)
 cloudinary.cloud-name=${CLOUDINARY_CLOUD_NAME:your-cloudinary-cloud-name}

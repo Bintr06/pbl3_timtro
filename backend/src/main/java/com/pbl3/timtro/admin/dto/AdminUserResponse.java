@@ -21,5 +21,5 @@ public class AdminUserResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer reportCount;
-    private Integer averageRating;
+    private Double averageRating;
 }

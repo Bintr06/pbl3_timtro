@@ -5,6 +5,7 @@ import com.pbl3.timtro.report.enums.UserReportStatus;
 import com.pbl3.timtro.user.entity.User;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,4 +22,7 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
     long countByStatus(UserReportStatus status);
 
     long countByReportedUser(User reportedUser);
+
+    @Query("SELECT ur.reportedUser.id, COUNT(ur) FROM UserReport ur GROUP BY ur.reportedUser.id")
+    List<Object[]> countReportsGroupedByReportedUserId();
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import { del, get, getAuthToken, post, postFormData, put, setAuthToken, clearAuthToken } from '../apiClient';
+import { del, get, getAuthToken, getRefreshToken, post, postFormData, put, setAuthToken, setRefreshToken, clearAuthToken } from '../apiClient';
 
 declare global {
   interface Window {
@@ -30,6 +30,7 @@ type ApiResponse<T> = {
 
 type AuthResponse = {
   token?: string | null;
+  refreshToken?: string | null;
   username: string;
   displayName?: string;
   role: string;
@@ -495,10 +496,11 @@ function Header() {
         '/api/auth/login',
         loginForm
       );
-      if (!res?.data?.token) {
-        throw new Error('Không nhận được token đăng nhập từ máy chủ.');
+      if (!res?.data?.token || !res?.data?.refreshToken) {
+        throw new Error('Không nhận được đầy đủ token đăng nhập từ máy chủ.');
       }
       setAuthToken(res.data.token);
+      setRefreshToken(res.data.refreshToken);
       const name = res.data.displayName || res.data.username;
       localStorage.setItem(AUTH_USER_NAME_KEY, name);
       setDisplayName(name);
@@ -530,10 +532,11 @@ function Header() {
       setAuthError(null);
       setAuthMessage(null);
       const res = await post<ApiResponse<AuthResponse>, { idToken: string }>('/api/auth/google', { idToken: credential });
-      if (!res?.data?.token) {
-        throw new Error('Không nhận được token đăng nhập từ máy chủ.');
+      if (!res?.data?.token || !res?.data?.refreshToken) {
+        throw new Error('Không nhận được đầy đủ token đăng nhập từ máy chủ.');
       }
       setAuthToken(res.data.token);
+      setRefreshToken(res.data.refreshToken);
       const name = res.data.displayName || res.data.username;
       localStorage.setItem(AUTH_USER_NAME_KEY, name);
       setDisplayName(name);
@@ -720,7 +723,14 @@ function Header() {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      try {
+        await post<ApiResponse<null>, { refreshToken: string }>('/api/auth/logout', { refreshToken });
+      } catch {
+      }
+    }
     clearAuthToken();
     localStorage.removeItem(AUTH_USER_NAME_KEY);
     setDisplayName('');

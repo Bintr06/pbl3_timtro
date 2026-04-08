@@ -14,7 +14,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -31,11 +33,24 @@ public class AdminUserController {
     @GetMapping("/all")
     public ResponseEntity<List<AdminUserResponse>> getAllUsers() {
         List<User> users = userRepository.findAll();
+        Map<Long, Integer> reportsByUserId = new HashMap<>();
+        userReportRepository.countReportsGroupedByReportedUserId().forEach(row -> {
+            Long userId = ((Number) row[0]).longValue();
+            Integer count = ((Number) row[1]).intValue();
+            reportsByUserId.put(userId, count);
+        });
+
+        Map<Long, Double> avgRatingsByUserId = new HashMap<>();
+        userRatingRepository.getAverageRatingGroupedByRatedUserId().forEach(row -> {
+            Long userId = ((Number) row[0]).longValue();
+            Double avg = row[1] == null ? null : ((Number) row[1]).doubleValue();
+            avgRatingsByUserId.put(userId, avg);
+        });
 
         List<AdminUserResponse> responses = users.stream()
                 .map(u -> {
-                    Long reportCount = userReportRepository.countByReportedUser(u);
-                    Double avgRating = userRatingRepository.getAverageRatingForUser(u.getId());
+                    int reportCount = reportsByUserId.getOrDefault(u.getId(), 0);
+                    Double avgRating = avgRatingsByUserId.get(u.getId());
 
                     return AdminUserResponse.builder()
                             .id(u.getId())
@@ -49,9 +64,9 @@ public class AdminUserController {
                             .isVerified(u.isVerified())
                             .createdAt(u.getCreatedAt())
                             .updatedAt(u.getUpdatedAt())
-                            .reportCount(Math.toIntExact(reportCount))
+                                .reportCount(reportCount)
                             .averageRating(avgRating != null && avgRating > 0
-                                    ? Math.round((float) (avgRating * 10)) / 10
+                                    ? Math.round(avgRating * 10.0) / 10.0
                                     : null)
                             .build();
                 })

@@ -8,10 +8,13 @@ import com.pbl3.timtro.room.enums.RoomStatus;
 import com.pbl3.timtro.report.repository.UserReportRepository;
 import com.pbl3.timtro.user.repository.UserRepository;
 import com.pbl3.timtro.userrating.repository.UserRatingRepository;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,8 +40,7 @@ public class AdminStatisticsService {
 
         dto.setTotalUsers(userRepository.count());
 
-        dto.setAvailableRooms(
-                roomRepository.findAllByStatus(RoomStatus.AVAILABLE).size());
+        dto.setAvailableRooms(roomRepository.countByStatus(RoomStatus.AVAILABLE));
 
         long pendingCount = userReportRepository.countByStatus(UserReportStatus.PENDING);
         dto.setPendingReports(pendingCount);
@@ -54,30 +56,42 @@ public class AdminStatisticsService {
     }
 
     private List<DailyStatsDto> getNewUsersByDay(int days) {
-        List<DailyStatsDto> result = new ArrayList<>();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-
-        for (int i = days - 1; i >= 0; i--) {
-            LocalDateTime endOfDay = LocalDateTime.now().minusDays(i).withHour(23).withMinute(59).withSecond(59);
-            LocalDateTime startOfDay = endOfDay.withHour(0).withMinute(0).withSecond(0);
-
-            long count = userRepository.countByCreatedAtBetween(startOfDay, endOfDay);
-            result.add(new DailyStatsDto(startOfDay.toLocalDate().format(formatter), count));
-        }
-
-        return result;
+        LocalDate today = LocalDate.now();
+        LocalDateTime fromDateTime = today.minusDays(days - 1L).atStartOfDay();
+        LocalDateTime toDateTime = today.plusDays(1L).atStartOfDay();
+        List<Object[]> rows = userRepository.countUsersGroupedByDate(fromDateTime, toDateTime);
+        return toDailyStats(days, today, rows);
     }
 
     private List<DailyStatsDto> getNewRoomsByDay(int days) {
+        LocalDate today = LocalDate.now();
+        LocalDateTime fromDateTime = today.minusDays(days - 1L).atStartOfDay();
+        LocalDateTime toDateTime = today.plusDays(1L).atStartOfDay();
+        List<Object[]> rows = roomRepository.countRoomsGroupedByDate(fromDateTime, toDateTime);
+        return toDailyStats(days, today, rows);
+    }
+
+    private List<DailyStatsDto> toDailyStats(int days, LocalDate today, List<Object[]> rows) {
         List<DailyStatsDto> result = new ArrayList<>();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        Map<LocalDate, Long> countsByDate = new HashMap<>();
+
+        for (Object[] row : rows) {
+            Object dayRaw = row[0];
+            LocalDate date;
+            if (dayRaw instanceof java.sql.Date sqlDate) {
+                date = sqlDate.toLocalDate();
+            } else {
+                date = LocalDate.parse(String.valueOf(dayRaw));
+            }
+            long count = ((Number) row[1]).longValue();
+            countsByDate.put(date, count);
+        }
 
         for (int i = days - 1; i >= 0; i--) {
-            LocalDateTime endOfDay = LocalDateTime.now().minusDays(i).withHour(23).withMinute(59).withSecond(59);
-            LocalDateTime startOfDay = endOfDay.withHour(0).withMinute(0).withSecond(0);
-
-            long count = roomRepository.countByCreatedAtBetween(startOfDay, endOfDay);
-            result.add(new DailyStatsDto(startOfDay.toLocalDate().format(formatter), count));
+            LocalDate day = today.minusDays(i);
+            long count = countsByDate.getOrDefault(day, 0L);
+            result.add(new DailyStatsDto(day.format(formatter), count));
         }
 
         return result;

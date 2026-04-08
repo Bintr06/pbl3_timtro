@@ -22,3 +22,16 @@ SET @sql := IF(
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  token_hash VARCHAR(128) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  revoked BIT(1) NOT NULL DEFAULT b'0',
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT uk_refresh_tokens_token_hash UNIQUE (token_hash),
+  INDEX idx_refresh_tokens_user_revoked (user_id, revoked),
+  INDEX idx_refresh_tokens_expires_at (expires_at)
+);

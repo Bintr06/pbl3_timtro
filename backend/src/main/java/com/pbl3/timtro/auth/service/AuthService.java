@@ -10,8 +10,10 @@ import com.pbl3.timtro.auth.dto.request.VerifyEmailRequest;
 import com.pbl3.timtro.auth.dto.response.AuthResponse;
 import com.pbl3.timtro.auth.entity.EmailVerificationToken;
 import com.pbl3.timtro.auth.entity.PasswordResetToken;
+import com.pbl3.timtro.auth.entity.RefreshToken;
 import com.pbl3.timtro.auth.repository.EmailVerificationTokenRepository;
 import com.pbl3.timtro.auth.repository.PasswordResetTokenRepository;
+import com.pbl3.timtro.auth.repository.RefreshTokenRepository;
 import com.pbl3.timtro.common.config.security.JwtService;
 import com.pbl3.timtro.user.entity.User;
 import com.pbl3.timtro.user.enums.Role;
@@ -30,9 +32,13 @@ import org.springframework.stereotype.Service;
 
 import jakarta.transaction.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.Random;
 import java.util.List;
 import java.util.Locale;
@@ -48,6 +54,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final JavaMailSender mailSender;
     @Value("${google.oauth.client-id:}")
     private String googleOauthClientId;
@@ -77,6 +84,7 @@ public class AuthService {
 
         return AuthResponse.builder()
             .token(null)
+            .refreshToken(null)
                 .username(user.getUsername())
                 .displayName(user.getDisplayName())
                 .role(user.getRole().name())
@@ -95,14 +103,7 @@ public class AuthService {
         if (!user.isVerified()) {
             throw new RuntimeException("Tài khoản chưa xác thực email. Vui lòng nhập mã xác thực trước khi đăng nhập.");
         }
-        String token = jwtService.generateToken(user);
-
-        return AuthResponse.builder()
-                .token(token)
-                .username(user.getUsername())
-                .displayName(user.getDisplayName())
-                .role(user.getRole().name())
-                .build();
+        return issueAuthTokens(user);
     }
 
     @Transactional
@@ -159,13 +160,57 @@ public class AuthService {
             userRepository.save(user);
         }
 
-        String token = jwtService.generateToken(user);
-        return AuthResponse.builder()
-                .token(token)
-                .username(user.getUsername())
-                .displayName(user.getDisplayName())
-                .role(user.getRole().name())
-                .build();
+        return issueAuthTokens(user);
+    }
+
+    @Transactional
+    public AuthResponse refreshAccessToken(String rawRefreshToken) {
+        String refreshToken = rawRefreshToken == null ? "" : rawRefreshToken.trim();
+        if (refreshToken.isEmpty()) {
+            throw new RuntimeException("Refresh token không hợp lệ");
+        }
+
+        String username;
+        try {
+            username = jwtService.extractUsername(refreshToken);
+        } catch (Exception e) {
+            throw new RuntimeException("Refresh token không hợp lệ");
+        }
+
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new RuntimeException("Tài khoản không tồn tại"));
+
+        String tokenHash = hashToken(refreshToken);
+        RefreshToken storedToken = refreshTokenRepository.findByTokenHashAndRevokedFalse(tokenHash)
+                .orElseThrow(() -> new RuntimeException("Refresh token không hợp lệ hoặc đã bị thu hồi"));
+
+        if (storedToken.getExpiresAt().isBefore(LocalDateTime.now()) || !jwtService.isRefreshTokenValid(refreshToken, user)) {
+            storedToken.setRevoked(true);
+            refreshTokenRepository.save(storedToken);
+            throw new RuntimeException("Refresh token đã hết hạn hoặc không hợp lệ");
+        }
+
+        if (!user.isEnabled()) {
+            revokeAllActiveRefreshTokens(user);
+            throw new RuntimeException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin!");
+        }
+
+        storedToken.setRevoked(true);
+        refreshTokenRepository.save(storedToken);
+        return issueAuthTokens(user);
+    }
+
+    @Transactional
+    public void logout(String rawRefreshToken) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            return;
+        }
+
+        String tokenHash = hashToken(rawRefreshToken.trim());
+        refreshTokenRepository.findByTokenHashAndRevokedFalse(tokenHash).ifPresent(token -> {
+            token.setRevoked(true);
+            refreshTokenRepository.save(token);
+        });
     }
 
 
@@ -180,6 +225,7 @@ public class AuthService {
         }
         currentUser.setHashedPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(currentUser);
+        revokeAllActiveRefreshTokens(currentUser);
     }
 
     @Transactional
@@ -291,6 +337,48 @@ public class AuthService {
             code = String.format("%06d", random.nextInt(1_000_000));
         } while (emailVerificationTokenRepository.existsByToken(code));
         return code;
+    }
+
+    private AuthResponse issueAuthTokens(User user) {
+        refreshTokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
+
+        String accessToken = jwtService.generateAccessToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
+
+        RefreshToken refreshTokenEntity = RefreshToken.builder()
+                .user(user)
+                .tokenHash(hashToken(refreshToken))
+                .expiresAt(LocalDateTime.ofInstant(jwtService.extractExpiration(refreshToken).toInstant(), java.time.ZoneId.systemDefault()))
+                .revoked(false)
+                .build();
+        refreshTokenRepository.save(refreshTokenEntity);
+
+        return AuthResponse.builder()
+                .token(accessToken)
+                .refreshToken(refreshToken)
+                .username(user.getUsername())
+                .displayName(user.getDisplayName())
+                .role(user.getRole().name())
+                .build();
+    }
+
+    private void revokeAllActiveRefreshTokens(User user) {
+        List<RefreshToken> activeTokens = refreshTokenRepository.findAllByUserAndRevokedFalse(user);
+        if (activeTokens.isEmpty()) {
+            return;
+        }
+        activeTokens.forEach(token -> token.setRevoked(true));
+        refreshTokenRepository.saveAll(activeTokens);
+    }
+
+    private String hashToken(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("Không thể xử lý refresh token", e);
+        }
     }
 
     private void issueEmailVerificationToken(User user) {

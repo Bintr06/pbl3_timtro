@@ -1,6 +1,7 @@
 package com.pbl3.timtro.common.exception;
 
 import com.pbl3.timtro.common.dto.ApiResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -11,6 +12,16 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+        @ExceptionHandler(DataIntegrityViolationException.class)
+        public ResponseEntity<ApiResponse<Object>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+                return ResponseEntity.status(409).body(
+                                ApiResponse.builder()
+                                                .status(409)
+                                                .message("Dữ liệu đã tồn tại hoặc vi phạm ràng buộc.")
+                                                .build()
+                );
+        }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Object>> handleRuntimeException(RuntimeException e) {

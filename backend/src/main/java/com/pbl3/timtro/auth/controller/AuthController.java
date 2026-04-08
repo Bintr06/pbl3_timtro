@@ -4,6 +4,7 @@ import com.pbl3.timtro.auth.dto.request.ChangePasswordRequest;
 import com.pbl3.timtro.auth.dto.request.ForgotPasswordRequest;
 import com.pbl3.timtro.auth.dto.request.GoogleLoginRequest;
 import com.pbl3.timtro.auth.dto.request.LoginRequest;
+import com.pbl3.timtro.auth.dto.request.RefreshTokenRequest;
 import com.pbl3.timtro.auth.dto.request.ResendVerificationRequest;
 import com.pbl3.timtro.auth.dto.request.RegisterRequest;
 import com.pbl3.timtro.auth.dto.request.ResetPasswordRequest;
@@ -112,5 +113,26 @@ public class AuthController {
         return ResponseEntity.ok(
                 new ApiResponse<>(200, "Đã gửi lại mã xác thực email.", null)
         );
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<AuthResponse>> refreshToken(
+            @Valid @RequestBody RefreshTokenRequest request
+    ) {
+        return ResponseEntity.ok(
+                ApiResponse.<AuthResponse>builder()
+                        .status(200)
+                        .message("Làm mới token thành công")
+                        .data(authService.refreshAccessToken(request.getRefreshToken()))
+                        .build()
+        );
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<String>> logout(
+            @Valid @RequestBody RefreshTokenRequest request
+    ) {
+        authService.logout(request.getRefreshToken());
+        return ResponseEntity.ok(new ApiResponse<>(200, "Đăng xuất thành công", null));
     }
 }

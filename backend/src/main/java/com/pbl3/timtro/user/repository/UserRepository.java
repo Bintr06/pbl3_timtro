@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,8 +27,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
     boolean existsByEmailIgnoreCase(String email);
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
 
     List<User> findAllByRole(Role role);
 
     long countByCreatedAtBetween(java.time.LocalDateTime startDate, java.time.LocalDateTime endDate);
+
+    @Query(value = "SELECT DATE(u.created_at) AS day, COUNT(*) AS cnt FROM users u " +
+            "WHERE u.created_at >= :fromDateTime AND u.created_at < :toDateTime " +
+            "GROUP BY DATE(u.created_at)", nativeQuery = true)
+    List<Object[]> countUsersGroupedByDate(@Param("fromDateTime") LocalDateTime fromDateTime,
+                                           @Param("toDateTime") LocalDateTime toDateTime);
 }
