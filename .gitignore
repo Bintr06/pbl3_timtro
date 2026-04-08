@@ -1,0 +1,30 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+
+# Backend development configuration (contains local credentials)
+backend/src/main/resources/application-dev.properties
+backend/src/main/resources/application*.local.properties
+
+# Backend build output
+backend/target/
+
+# Frontend build output / dependencies
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Optional root-level caches
+node_modules/
+dist/
+target/

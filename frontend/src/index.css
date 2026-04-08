@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+.leaflet-container {
+  height: 500px;
+  width: 100%;
+  z-index: 1;
+  position: relative;
+}
+
+.leaflet-pane,
+.leaflet-control-container {
+  z-index: 2;
+}
+
+.leaflet-control {
+  z-index: 3;
+}
+
+.timtro-room-marker {
+  background: transparent;
+  border: none;
+}
+
+.timtro-marker-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.timtro-marker-thumb {
+  width: 78px;
+  height: 56px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid #ffffff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+  background: #fff;
+  opacity: 0;
+  transform: translateY(6px) scale(0.92);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+.timtro-marker-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.timtro-marker-pin {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #f97316;
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+}
+
+.timtro-marker-root:hover .timtro-marker-thumb {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+:root {
+  font-family: Inter, system-ui, Arial, sans-serif;
+  color: #111827;
+  background: #f8fafc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+}
+
+button,
+a,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+select,
+summary,
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
