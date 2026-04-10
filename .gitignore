@@ -9,7 +9,6 @@ Thumbs.db
 logs/
 
 # Environment files
-.env
 .env.*
 
 # Backend development configuration (contains local credentials)
