@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "lucide-react": "^1.7.0",
+    "react-share": "^5.3.0"
+  }
+}
