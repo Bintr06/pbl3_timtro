@@ -33,7 +33,7 @@ public class RoomController {
             @AuthenticationPrincipal User currentUser
     ) {
         roomService.createRoom(request, files, currentUser);
-        return ResponseEntity.ok(new ApiResponse<>(200, "Đăng tin thành công!", null));
+        return ResponseEntity.ok(new ApiResponse<>(200, "Đăng tin thành công, vui lòng chờ duyệt!", null));
     }
 
     @GetMapping("/public/all")
@@ -47,11 +47,20 @@ public class RoomController {
     }
 
     @GetMapping("/my")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<List<RoomResponse>>> getMyRooms(
             @AuthenticationPrincipal User currentUser
     ) {
         return ResponseEntity.ok(new ApiResponse<>(200, "Success", roomService.getMyRooms(currentUser)));
+    }
+
+    @GetMapping("/{id:\\d+}")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<RoomResponse>> getRoomDetail(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(200, "Success", roomService.getRoomDetail(id, currentUser)));
     }
 
     @DeleteMapping("/{id}")

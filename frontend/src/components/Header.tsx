@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
@@ -127,6 +127,80 @@ function MapFlyTo({ center, zoom }: MapFlyToProps) {
     map.flyTo(center, zoom, { duration: 0.8 });
   }, [center, zoom, map]);
   return null;
+}
+
+function AccountMenuItemIcon({ children }: { children: ReactNode }) {
+  return (
+    <span className="mr-3 inline-flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-neutral-100 text-neutral-700">
+      {children}
+    </span>
+  );
+}
+
+function MenuIconHome() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V21h14V9.5" />
+      <path d="M9 21v-6h6v6" />
+    </svg>
+  );
+}
+
+function MenuIconProfile() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5.5 20c1.5-3.2 4.2-5 6.5-5s5 1.8 6.5 5" />
+    </svg>
+  );
+}
+
+function MenuIconHistory() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 12a8 8 0 1 0 2.3-5.7" />
+      <path d="M4 4v4h4" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function MenuIconAdmin() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3Z" />
+      <path d="m9.5 12 1.8 1.8L15.5 10" />
+    </svg>
+  );
+}
+
+function MenuIconSettings() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10.2 4.3a2 2 0 0 1 3.6 0l.2.4a2 2 0 0 0 1.9 1.2l.4-.1a2 2 0 0 1 2.2 2.2l-.1.4a2 2 0 0 0 1.2 1.9l.4.2a2 2 0 0 1 0 3.6l-.4.2a2 2 0 0 0-1.2 1.9l.1.4a2 2 0 0 1-2.2 2.2l-.4-.1a2 2 0 0 0-1.9 1.2l-.2.4a2 2 0 0 1-3.6 0l-.2-.4a2 2 0 0 0-1.9-1.2l-.4.1a2 2 0 0 1-2.2-2.2l.1-.4a2 2 0 0 0-1.2-1.9l-.4-.2a2 2 0 0 1 0-3.6l.4-.2a2 2 0 0 0 1.2-1.9l-.1-.4a2 2 0 0 1 2.2-2.2l.4.1a2 2 0 0 0 1.9-1.2l.2-.4Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function MenuIconListings() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 6h16M4 12h16M4 18h10" />
+      <path d="M17 16.5 19.5 19l3.5-3.5" />
+    </svg>
+  );
+}
+
+function MenuIconLogout() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+      <path d="M21 4v16" />
+    </svg>
+  );
 }
 
 function Header() {
@@ -946,7 +1020,7 @@ function Header() {
     }
   };
 
-  const jumpMapToSelectedAddress = async () => {
+  const jumpMapToSelectedAddress = async (queryOverride?: string) => {
     type NominatimSearchItem = {
       lat: string;
       lon: string;
@@ -979,11 +1053,13 @@ function Header() {
     const selectedProvince = provinces.find((item) => item.code === selectedProvinceCode)?.name ?? '';
     const selectedDistrict = districts.find((item) => item.code === selectedDistrictCode)?.name ?? '';
     const selectedWard = wards.find((item) => item.code === selectedWardCode)?.name ?? '';
-    const inputAddress = mapSearchKeyword.trim();
+    const inputAddressRaw = (queryOverride ?? mapSearchKeyword).trim();
+    const inputAddress = inputAddressRaw.replace(/\s*\/\s*/g, ', ');
     const fallbackAddress = [postRoomForm.streetDetail.trim()].filter(Boolean).join(', ');
     const addressPart = inputAddress || fallbackAddress;
     const adminPart = [selectedWard, selectedDistrict, selectedProvince, 'Viet Nam'].filter(Boolean).join(', ');
     const hasAnyAdmin = Boolean(selectedProvince || selectedDistrict || selectedWard);
+    const hasStreetNumber = /(^|\s|,|\.)\d{1,6}[A-Za-z]?([\/\-]\d{1,6})?(?=\s|,|\.|$)/.test(inputAddress);
 
     if (!addressPart && !hasAnyAdmin) {
         setMapSearchError('Vui lòng nhập địa chỉ hoặc chọn tỉnh/quận/phường để định vị.');
@@ -1043,7 +1119,16 @@ function Header() {
       if (picked.display_name) {
         setSelectedLocationLabel(picked.display_name);
       }
+
+      if (isDetail && hasStreetNumber) {
+        // With house-number level query, auto-pick the returned coordinate.
+        setSelectedCoordinates({ lat, lng });
+        setMapSearchError(null);
+        return;
+      }
+
       if (!isDetail) {
+        setSelectedCoordinates(null);
         setMapSearchError('Đã nhảy tới khu vực gần đúng, vui lòng click map để chốt chính xác.');
       }
     } catch {
@@ -1292,17 +1377,20 @@ function Header() {
                 </div>
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                   onClick={() => {
                     setIsAccountMenuOpen(false);
                     navigate('/favorites');
                   }}
                 >
+                  <AccountMenuItemIcon>
+                    <MenuIconHome />
+                  </AccountMenuItemIcon>
                   <span>Tin đăng đã lưu</span>
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
                   disabled={!currentUserId}
                   onClick={() => {
                     if (!currentUserId) {
@@ -1312,59 +1400,76 @@ function Header() {
                     navigate(`/profile/${currentUserId}`);
                   }}
                 >
+                  <AccountMenuItemIcon>
+                    <MenuIconProfile />
+                  </AccountMenuItemIcon>
                   <span>Trang cá nhân</span>
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                   onClick={() => {
                     setIsAccountMenuOpen(false);
                     navigate('/history');
                   }}
                 >
+                  <AccountMenuItemIcon>
+                    <MenuIconHistory />
+                  </AccountMenuItemIcon>
                   <span>Lịch sử xem tin</span>
                 </button>
                 {currentUserRole?.toUpperCase() === 'ADMIN' && (
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                    className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                     onClick={() => {
                       setIsAccountMenuOpen(false);
                       navigate('/admin');
                     }}
                   >
+                    <AccountMenuItemIcon>
+                      <MenuIconAdmin />
+                    </AccountMenuItemIcon>
                     <span>Dashboard admin</span>
                   </button>
                 )}
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                   onClick={() => {
                     setIsAccountMenuOpen(false);
                     navigate('/account');
                   }}
                 >
+                  <AccountMenuItemIcon>
+                    <MenuIconSettings />
+                  </AccountMenuItemIcon>
                   <span>Cài đặt tài khoản</span>
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                   onClick={() => {
                     setIsAccountMenuOpen(false);
                     openManageRooms();
                   }}
                 >
+                  <AccountMenuItemIcon>
+                    <MenuIconListings />
+                  </AccountMenuItemIcon>
                   <span>Quản lý tin</span>
                 </button>
-                <div className="my-1 border-t border-neutral-100" />
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left font-semibold text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                   onClick={() => {
                     setIsAccountMenuOpen(false);
                     logout();
                   }}
                 >
+                  <AccountMenuItemIcon>
+                    <MenuIconLogout />
+                  </AccountMenuItemIcon>
                   <span>Đăng xuất</span>
                 </button>
               </div>
@@ -1866,19 +1971,21 @@ function Header() {
                         onClick={() => {
                           setIsMapPickerOpen(true);
                           setMapSearchError(null);
-                          if (!mapSearchKeyword.trim()) {
-                            const selectedProvince = provinces.find((item) => item.code === selectedProvinceCode)?.name ?? '';
-                            const selectedDistrict = districts.find((item) => item.code === selectedDistrictCode)?.name ?? '';
-                            const selectedWard = wards.find((item) => item.code === selectedWardCode)?.name ?? '';
-                            const suggested = [
-                              postRoomForm.streetDetail.trim(),
-                              selectedWard,
-                              selectedDistrict,
-                              selectedProvince,
-                            ]
-                              .filter(Boolean)
-                              .join(', ');
-                            setMapSearchKeyword(suggested);
+                          const selectedProvince = provinces.find((item) => item.code === selectedProvinceCode)?.name ?? '';
+                          const selectedDistrict = districts.find((item) => item.code === selectedDistrictCode)?.name ?? '';
+                          const selectedWard = wards.find((item) => item.code === selectedWardCode)?.name ?? '';
+                          const suggested = [
+                            postRoomForm.streetDetail.trim(),
+                            selectedWard,
+                            selectedDistrict,
+                            selectedProvince,
+                          ]
+                            .filter(Boolean)
+                            .join(', ');
+                          const query = mapSearchKeyword.trim() || suggested;
+                          if (query) {
+                            setMapSearchKeyword(query);
+                            void jumpMapToSelectedAddress(query);
                           }
                         }}
                       >
@@ -2080,7 +2187,9 @@ function Header() {
               <button
                 type="button"
                 className="h-9 rounded-xl bg-orange-500 px-3 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
-                onClick={jumpMapToSelectedAddress}
+                onClick={() => {
+                  void jumpMapToSelectedAddress();
+                }}
                 disabled={isMapSearching}
               >
                 {isMapSearching ? 'Đang tìm...' : 'Tìm trên bản đồ'}

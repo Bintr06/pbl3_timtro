@@ -15,6 +15,7 @@ import com.pbl3.timtro.room.enums.RoomStatus;
 import com.pbl3.timtro.room.repository.AmenityRepository;
 import com.pbl3.timtro.room.repository.RoomRepository;
 import com.pbl3.timtro.user.entity.User;
+import com.pbl3.timtro.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,17 +31,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class RoomService {
+    private static final ZoneId APP_ZONE_ID = ZoneId.of("Asia/Ho_Chi_Minh");
+
     private final RoomRepository roomRepository;
     private final AmenityRepository amenityRepository;
     private final CloudinaryService cloudinaryService;
     private final FavoriteRepository favoriteRepository;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     public List<AmenityResponse> getAllAmenitiesForPublic() {
         return amenityRepository.findAll().stream()
@@ -51,6 +56,9 @@ public class RoomService {
 
     @Transactional
     public void createRoom(RoomRequest request, List<MultipartFile> files, User owner) {
+        User managedOwner = userRepository.findById(owner.getId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+
         Room room = Room.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
@@ -63,8 +71,8 @@ public class RoomService {
                 .streetDetail(request.getStreetDetail())
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
-                .status(RoomStatus.AVAILABLE)
-                .owner(owner)
+                .status(RoomStatus.PENDING)
+                .owner(managedOwner)
                 .build();
 
         if (request.getAmenityIds() != null && !request.getAmenityIds().isEmpty()) {
@@ -91,6 +99,7 @@ public class RoomService {
         }
         roomRepository.save(room);
     }
+
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof User) {
@@ -113,6 +122,31 @@ public class RoomService {
                 .distinct()
                 .toList();
         return mapRoomsToResponses(rooms, currentUser);
+    }
+
+        public RoomResponse getRoomDetail(Long roomId, User currentUser) {
+        Room room = roomRepository.findByIdWithImagesAndAmenities(roomId)
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
+
+        boolean isAdmin = currentUser != null && currentUser.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        boolean isOwner = currentUser != null
+            && room.getOwner() != null
+            && room.getOwner().getId().equals(currentUser.getId());
+        boolean isPublicRoom = room.getStatus() == RoomStatus.AVAILABLE;
+
+        if (!isPublicRoom && !isOwner && !isAdmin) {
+            throw new RuntimeException("Bạn không có quyền xem tin đăng này!");
+        }
+
+        return mapToResponse(room, currentUser);
+        }
+
+    public RoomResponse getRoomDetailForAdmin(Long roomId) {
+        User currentUser = getCurrentUser();
+        Room room = roomRepository.findByIdWithImagesAndAmenities(roomId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
+        return mapToResponse(room, currentUser);
     }
 
     private List<RoomResponse> mapRoomsToResponses(List<Room> rooms, User currentUser) {
@@ -204,7 +238,7 @@ public class RoomService {
 
     @Transactional
     public void deleteRoom(Long roomId, User currentUser, RoomDeleteRequest deleteRequest) {
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdAndDeletedFalse(roomId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
 
         boolean isOwner = room.getOwner().getId().equals(currentUser.getId());
@@ -231,19 +265,22 @@ public class RoomService {
         }
 
         if (room.getImages() != null) {
-            for (RoomImage img : room.getImages()) {
+            List<RoomImage> images = new java.util.ArrayList<>(room.getImages());
+            for (RoomImage img : images) {
                 cloudinaryService.deleteFile(img.getImageUrl());
+                room.removeImage(img);
             }
         }
 
         favoriteRepository.deleteAllByRoomId(roomId);
 
-        roomRepository.delete(room);
+        room.setDeleted(true);
+        roomRepository.save(room);
     }
 
     @Transactional
     public void updateRoomStatus(Long roomId, String status, User currentUser) {
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdAndDeletedFalse(roomId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
 
         boolean isOwner = room.getOwner().getId().equals(currentUser.getId());
@@ -257,10 +294,21 @@ public class RoomService {
         String normalizedStatus = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
         RoomStatus nextStatus;
         switch (normalizedStatus) {
+            case "PENDING" -> nextStatus = RoomStatus.PENDING;
             case "AVAILABLE" -> nextStatus = RoomStatus.AVAILABLE;
             case "RENTED" -> nextStatus = RoomStatus.RENTED;
+            case "REJECT", "REJECTED" -> nextStatus = RoomStatus.REJECTED;
             case "HIDE", "HIDDEN" -> nextStatus = RoomStatus.HIDDEN;
-            default -> throw new RuntimeException("Trạng thái không hợp lệ. Chỉ chấp nhận AVAILABLE, RENTED hoặc HIDE.");
+            default -> throw new RuntimeException("Trạng thái không hợp lệ. Chỉ chấp nhận PENDING, AVAILABLE, RENTED, REJECTED hoặc HIDE.");
+        }
+
+        if (!isAdmin) {
+            if (nextStatus == RoomStatus.PENDING) {
+                throw new RuntimeException("Bạn không thể đặt lại tin về trạng thái chờ duyệt.");
+            }
+            if (room.getStatus() == RoomStatus.PENDING && nextStatus != RoomStatus.PENDING) {
+                throw new RuntimeException("Tin đăng đang chờ quản trị viên duyệt, bạn không thể tự cập nhật trạng thái.");
+            }
         }
 
         room.setStatus(nextStatus);
@@ -269,7 +317,7 @@ public class RoomService {
 
     @Transactional
     public void updateRoom(Long roomId, RoomUpdateRequest request, List<MultipartFile> newFiles, User currentUser) {
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdAndDeletedFalse(roomId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
 
         if (!room.getOwner().getId().equals(currentUser.getId())) {
@@ -287,7 +335,7 @@ public class RoomService {
         
         room.setLatitude(request.getLatitude());
         room.setLongitude(request.getLongitude()); 
-        room.setStatus(RoomStatus.AVAILABLE);
+        room.setStatus(RoomStatus.PENDING);
 
         if (request.getAmenityIds() != null) {
             Set<Amenity> amenities = new HashSet<>(amenityRepository.findAllById(request.getAmenityIds()));

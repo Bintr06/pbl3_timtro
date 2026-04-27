@@ -714,7 +714,9 @@ function App() {
       <Header />
       <main
         className={
-          isChatRoute || isAdminRoute ? 'w-full px-0 py-0' : 'mx-auto w-full max-w-[1400px] px-4 py-6'
+          isChatRoute || isAdminRoute
+            ? 'relative z-10 w-full px-0 py-0'
+            : 'relative z-10 mx-auto w-full max-w-[1400px] px-4 py-6'
         }
       >
         <Routes>
@@ -722,6 +724,7 @@ function App() {
             path="/"
             element={
               <RoomListPage
+                allRooms={rooms}
                 rooms={paginatedRooms}
                 loading={loading}
                 error={error}
@@ -737,7 +740,6 @@ function App() {
                 searchKeyword={searchKeyword}
                 currentPage={currentPage}
                 totalPages={totalPages}
-                totalResults={filteredRooms.length}
                 onChangeProvince={(code) => {
                   setSelectedProvinceCode(code);
                   const nextDistricts = provinces.find((province) => province.code === code)?.districts ?? [];
@@ -973,6 +975,14 @@ function MyListingsPage() {
 
   useEffect(() => {
     void loadMyListings();
+  }, []);
+
+  useEffect(() => {
+    const handleRoomPosted = () => {
+      void loadMyListings();
+    };
+    window.addEventListener('room-posted', handleRoomPosted);
+    return () => window.removeEventListener('room-posted', handleRoomPosted);
   }, []);
 
   useEffect(() => {
@@ -3085,6 +3095,7 @@ function ChatPage() {
 }
 
 type RoomListPageProps = {
+  allRooms: Room[];
   rooms: Room[];
   loading: boolean;
   error: string | null;
@@ -3100,7 +3111,6 @@ type RoomListPageProps = {
   searchKeyword: string;
   currentPage: number;
   totalPages: number;
-  totalResults: number;
   onChangeProvince: (value: number | null) => void;
   onChangeDistrict: (value: number | null) => void;
   onChangeWard: (value: number | null) => void;
@@ -3117,6 +3127,7 @@ type RoomListPageProps = {
 };
 
 function RoomListPage({
+  allRooms,
   rooms,
   loading,
   error,
@@ -3132,7 +3143,6 @@ function RoomListPage({
   searchKeyword,
   currentPage,
   totalPages,
-  totalResults,
   onChangeProvince,
   onChangeDistrict,
   onChangeWard,
@@ -3147,12 +3157,60 @@ function RoomListPage({
   onViewRoom,
   onPageChange,
 }: RoomListPageProps) {
+  const GEO_COORDS_CACHE_KEY = 'timtro_user_coords_v1';
   const [showAuthPrompt, setShowAuthPrompt] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(Boolean(getAuthToken()));
   const [openFilterPanel, setOpenFilterPanel] = useState<'location' | 'price' | 'amenity' | null>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'ready' | 'denied' | 'unsupported' | 'error'>('idle');
   const [nearbyIndex, setNearbyIndex] = useState(0);
   const filterGroupRef = useRef<HTMLDivElement | null>(null);
+  const hasCoordsRef = useRef(false);
+
+  const updateCoords = useCallback((lat: number, lng: number) => {
+    const next = { lat, lng };
+    setUserCoords(next);
+    setGeoStatus('ready');
+    hasCoordsRef.current = true;
+    localStorage.setItem(GEO_COORDS_CACHE_KEY, JSON.stringify(next));
+  }, []);
+
+  const requestUserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGeoStatus('unsupported');
+      return () => {};
+    }
+
+    setGeoStatus('loading');
+
+    const success = (position: GeolocationPosition) => {
+      updateCoords(position.coords.latitude, position.coords.longitude);
+    };
+
+    const handleError = (error: GeolocationPositionError) => {
+      if (error.code === error.PERMISSION_DENIED) {
+        setGeoStatus('denied');
+        return;
+      }
+      if (!hasCoordsRef.current) {
+        setGeoStatus('error');
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(success, handleError, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 300000,
+    });
+
+    const watchId = navigator.geolocation.watchPosition(success, handleError, {
+      enableHighAccuracy: false,
+      timeout: 20000,
+      maximumAge: 300000,
+    });
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [updateCoords]);
 
   useEffect(() => {
     const syncAuthState = () => setIsLoggedIn(Boolean(getAuthToken()));
@@ -3167,22 +3225,26 @@ function RoomListPage({
   }, []);
 
   useEffect(() => {
-    if (!navigator.geolocation) {
-      return;
+    hasCoordsRef.current = Boolean(userCoords);
+  }, [userCoords]);
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(GEO_COORDS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { lat?: number; lng?: number };
+        if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+          setUserCoords({ lat: parsed.lat, lng: parsed.lng });
+          setGeoStatus('ready');
+          hasCoordsRef.current = true;
+        }
+      }
+    } catch {
     }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserCoords({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-      },
-      () => {
-        setUserCoords(null);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 120000 }
-    );
-  }, []);
+
+    const stopWatching = requestUserLocation();
+    return () => stopWatching();
+  }, [requestUserLocation]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -3209,7 +3271,7 @@ function RoomListPage({
     selectedAmenities.length === 0 ? 'Tất cả tiện ích' : `${selectedAmenities.length} tiện ích`;
 
   const nearbyRooms = useMemo<RoomWithDistance[]>(() => {
-    const roomsWithCoords = rooms.filter(
+    const roomsWithCoords = allRooms.filter(
       (room) =>
         typeof room.latitude === 'number' &&
         typeof room.longitude === 'number' &&
@@ -3220,7 +3282,7 @@ function RoomListPage({
       return [] as RoomWithDistance[];
     }
     if (!userCoords) {
-      return roomsWithCoords.slice(0, 20).map((room) => ({ ...room }));
+      return [] as RoomWithDistance[];
     }
     return [...roomsWithCoords]
       .map((room) => ({
@@ -3231,10 +3293,16 @@ function RoomListPage({
       .sort((a, b) => {
         const dA = a.distanceKm as number;
         const dB = b.distanceKm as number;
-        return dA - dB;
+        if (dA !== dB) {
+          return dA - dB;
+        }
+
+        const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return createdB - createdA;
       })
       .slice(0, 20);
-  }, [rooms, userCoords]);
+  }, [allRooms, userCoords]);
 
   const nearbyPageSize = 5;
   const nearbyTotalPages = Math.max(1, Math.ceil(nearbyRooms.length / nearbyPageSize));
@@ -3246,7 +3314,7 @@ function RoomListPage({
 
   return (
     <section className="space-y-4">
-      <header className="mx-auto w-full max-w-[1240px] overflow-visible rounded-[34px] bg-gradient-to-r from-orange-500 via-orange-500 to-orange-400 shadow-xl text-white">
+      <header className="relative z-20 mx-auto w-full max-w-[1240px] overflow-visible rounded-[34px] bg-gradient-to-r from-orange-500 via-orange-500 to-orange-400 shadow-xl text-white">
         <div className="relative flex flex-col justify-center overflow-visible px-5 py-7 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-4xl text-center text-white">
             <p className="text-2xl font-extrabold tracking-tight sm:text-3xl lg:text-4xl">
@@ -3424,127 +3492,112 @@ function RoomListPage({
       </header>
 
       <div className="mx-auto w-full max-w-[1240px] space-y-6">
-        <section className="rounded-3xl border border-orange-100 bg-gradient-to-b from-orange-50/70 via-white to-white p-4 shadow-sm sm:p-5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-orange-100 pb-3">
+        <section className="rounded-3xl border border-orange-100 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3 flex items-center justify-between">
             <div className="relative">
               <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-4xl opacity-15">🔥</span>
               <h2 className="relative text-xl font-extrabold tracking-tight text-neutral-900">Tin đăng mới nhất</h2>
             </div>
-            <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-neutral-600 shadow-sm">
-              {totalResults} kết quả
-            </span>
           </div>
 
-        {loading && <p className="text-sm text-neutral-600">Đang tải dữ liệu...</p>}
-        {error && <p className="text-sm text-red-700">{error}</p>}
-        {!loading && !error && rooms.length === 0 && (
-          <p className="text-sm text-neutral-600">Hiện chưa có phòng trọ phù hợp.</p>
-        )}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+          {loading && <p className="text-sm text-neutral-600">Đang tải dữ liệu...</p>}
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          {!loading && !error && rooms.length === 0 && (
+            <p className="text-sm text-neutral-600">Hiện chưa có phòng trọ phù hợp.</p>
+          )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {rooms.map((room) => (
-            <article
-              key={room.id}
-              className="group flex h-full flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-white shadow-sm transition hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl"
-            >
-              <div className="relative overflow-hidden">
-                <img
-                  src={room.imageUrls?.[0] || 'https://placehold.co/600x350?text=Timtro'}
-                  alt={room.title}
-                  className="h-44 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                />
-                <span className="absolute bottom-2 left-2 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold text-white">
-                  {formatPostedTime(room.createdAt)}
-                </span>
-              </div>
-              <div className="flex flex-1 flex-col p-3.5">
-                <h3 className="line-clamp-2 min-h-10 text-[15px] font-semibold leading-5 text-neutral-900">{room.title}</h3>
-                <p className="mt-2 text-lg font-extrabold text-[#d0021b]">{formatPricePerMonth(room.price ?? 0)}</p>
-                <div className="mt-1 flex items-center gap-2 text-xs text-neutral-600">
-                  <span className="line-clamp-1">📍 {room.province || 'Đang cập nhật'}</span>
-                  <span className="text-neutral-300">•</span>
-                  <span>{room.area ? `${room.area} m²` : 'Đang cập nhật DT'}</span>
-                </div>
-                <button
-                  type="button"
-                  className="mt-2 w-fit rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
-                  onClick={() => onOpenProfile(room.ownerId)}
+          {!loading && !error && rooms.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              {rooms.map((room) => (
+                <article
+                  key={room.id}
+                  className="group flex h-full flex-col overflow-hidden rounded-3xl border border-neutral-200/90 bg-white shadow-sm transition hover:-translate-y-1 hover:border-orange-200 hover:shadow-xl"
                 >
-                  Người đăng: {room.ownerName || 'Đang cập nhật'}
+                  <div className="relative overflow-hidden">
+                    <img
+                      src={room.imageUrls?.[0] || 'https://placehold.co/600x350?text=Timtro'}
+                      alt={room.title}
+                      className="h-44 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                    />
+                    <span className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white">
+                      {formatPostedTime(room.createdAt)}
+                    </span>
+                  </div>
+                  <div className="flex flex-1 flex-col p-3">
+                    <h4 className="line-clamp-2 min-h-10 text-[15px] font-semibold leading-5 text-neutral-900">{room.title}</h4>
+                    <p className="mt-2 text-lg font-extrabold text-[#d0021b]">{formatPricePerMonth(room.price ?? 0)}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-neutral-600">
+                      <span className="line-clamp-1">📍 {room.province || 'Đang cập nhật'}</span>
+                      <span className="text-neutral-300">•</span>
+                      <span>{room.area ? `${room.area} m²` : 'Đang cập nhật DT'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-2 w-fit rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                      onClick={() => onOpenProfile(room.ownerId)}
+                    >
+                      Người đăng: {room.ownerName || 'Đang cập nhật'}
+                    </button>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="h-8 flex-1 rounded-xl bg-orange-500 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-orange-600"
+                        onClick={() => onViewRoom(room)}
+                      >
+                        Xem phòng
+                      </button>
+                      <button
+                        type="button"
+                        className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border bg-white transition hover:bg-neutral-50 ${
+                          room.isFavorite ? 'border-rose-300 text-rose-500' : 'border-neutral-300 text-neutral-700'
+                        }`}
+                        onClick={() => onToggleFavorite(room.id)}
+                        aria-label="Yêu thích"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path
+                            d="M12 21s-7-4.8-9.2-8.2C.9 9.7 2.2 6 5.8 5.2A5.2 5.2 0 0 1 12 8a5.2 5.2 0 0 1 6.2-2.8c3.6.8 4.9 4.5 3 7.6C19 16.2 12 21 12 21Z"
+                            fill={room.isFavorite ? 'currentColor' : 'none'}
+                            stroke="currentColor"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-neutral-300 bg-white text-neutral-700 transition hover:bg-neutral-50"
+                        onClick={() => onOpenChat(room.ownerId, room.ownerName)}
+                        aria-label="Nhắn tin"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H8l-4 3v-7A8.5 8.5 0 1 1 21 11.5Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {!loading && !error && totalPages > 1 && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  className={`h-9 min-w-9 rounded-lg border px-3 text-sm font-semibold transition ${
+                    currentPage === page
+                      ? 'border-orange-500 bg-orange-500 text-white'
+                      : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+                  }`}
+                  onClick={() => onPageChange(page)}
+                  aria-label={`Trang ${page}`}
+                >
+                  {page}
                 </button>
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="h-8 flex-1 rounded-xl bg-orange-500 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-orange-600"
-                    onClick={() => onViewRoom(room)}
-                  >
-                    Xem phòng
-                  </button>
-                  <button
-                    type="button"
-                    className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border bg-white transition hover:bg-neutral-50 ${
-                      room.isFavorite
-                        ? 'border-rose-300 text-rose-500'
-                        : 'border-neutral-300 text-neutral-700'
-                    }`}
-                    onClick={() => onToggleFavorite(room.id)}
-                    aria-label="Yêu thích"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path
-                        d="M12 21s-7-4.8-9.2-8.2C.9 9.7 2.2 6 5.8 5.2A5.2 5.2 0 0 1 12 8a5.2 5.2 0 0 1 6.2-2.8c3.6.8 4.9 4.5 3 7.6C19 16.2 12 21 12 21Z"
-                        fill={room.isFavorite ? 'currentColor' : 'none'}
-                        stroke="currentColor"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-neutral-300 bg-white text-neutral-700 transition hover:bg-neutral-50"
-                    onClick={() => onOpenChat(room.ownerId, room.ownerName)}
-                    aria-label="Nhắn tin"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H8l-4 3v-7A8.5 8.5 0 1 1 21 11.5Z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-          <button
-            type="button"
-            disabled={currentPage <= 1}
-            className="h-9 rounded-xl border border-neutral-300 bg-white px-3 text-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-          >
-            Trước
-          </button>
-          {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
-            <button
-              key={page}
-              type="button"
-              className={`h-9 rounded-xl border px-3 text-sm transition ${
-                currentPage === page
-                  ? 'border-orange-500 bg-orange-500 text-white'
-                  : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
-              }`}
-              onClick={() => onPageChange(page)}
-            >
-              {page}
-            </button>
-          ))}
-          <button
-            type="button"
-            disabled={currentPage >= totalPages}
-            className="h-9 rounded-xl border border-neutral-300 bg-white px-3 text-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-          >
-            Sau
-          </button>
+              ))}
+            </div>
+          )}
         </div>
         </section>
 
@@ -3553,28 +3606,31 @@ function RoomListPage({
             <div>
               <h3 className="text-xl font-extrabold tracking-tight text-neutral-900">Phòng trọ gần bạn</h3>
             </div>
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-600 shadow-sm">
-              {userCoords ? 'Hiển thị các phòng trong bán kính 5 km' : 'Bật vị trí để xem phòng trong bán kính 5 km'}
-            </span>
           </div>
           <div className="relative rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
             {nearbyRooms.length === 0 ? (
               <p className="text-sm text-neutral-600">
-                {userCoords
+                {geoStatus === 'loading'
+                  ? 'Đang lấy vị trí của bạn...'
+                  : geoStatus === 'denied'
+                    ? 'Bạn đã chặn quyền vị trí. Hãy bật quyền định vị để xem phòng gần bạn.'
+                    : userCoords
                   ? 'Chưa có phòng trọ trong bán kính 5 km từ vị trí của bạn.'
                   : 'Chưa thể lấy vị trí của bạn. Hãy bật quyền định vị để xem phòng gần bạn.'}
               </p>
             ) : (
               <>
-                <button
-                  type="button"
-                  className="absolute -left-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl font-bold text-neutral-700 shadow-md transition hover:bg-neutral-50 disabled:opacity-40"
-                  onClick={() => setNearbyIndex((prev) => Math.max(0, prev - 1))}
-                  disabled={nearbyDisplayIndex === 0}
-                  aria-label="Xem nhóm phòng gần trước"
-                >
-                  &lt;
-                </button>
+                {nearbyTotalPages > 1 && (
+                  <button
+                    type="button"
+                    className="absolute -left-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl font-bold text-neutral-700 shadow-md transition hover:bg-neutral-50 disabled:opacity-40"
+                    onClick={() => setNearbyIndex((prev) => Math.max(0, prev - 1))}
+                    disabled={nearbyDisplayIndex === 0}
+                    aria-label="Xem nhóm phòng gần trước"
+                  >
+                    &lt;
+                  </button>
+                )}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   {nearbyVisibleRooms.map((room) => (
                     <article
@@ -3648,15 +3704,17 @@ function RoomListPage({
                     </article>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  className="absolute -right-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl font-bold text-neutral-700 shadow-md transition hover:bg-neutral-50 disabled:opacity-40"
-                  onClick={() => setNearbyIndex((prev) => Math.min(nearbyTotalPages - 1, prev + 1))}
-                  disabled={nearbyDisplayIndex >= nearbyTotalPages - 1}
-                  aria-label="Xem nhóm phòng gần tiếp theo"
-                >
-                  &gt;
-                </button>
+                {nearbyTotalPages > 1 && (
+                  <button
+                    type="button"
+                    className="absolute -right-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl font-bold text-neutral-700 shadow-md transition hover:bg-neutral-50 disabled:opacity-40"
+                    onClick={() => setNearbyIndex((prev) => Math.min(nearbyTotalPages - 1, prev + 1))}
+                    disabled={nearbyDisplayIndex >= nearbyTotalPages - 1}
+                    aria-label="Xem nhóm phòng gần tiếp theo"
+                  >
+                    &gt;
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -3777,19 +3835,17 @@ function RoomDetailPage() {
       try {
         setLoading(true);
         setError(null);
-        const response = await get<ApiResponse<Room[]>>('/api/rooms/public/all');
-        const normalizedRooms = (response.data ?? []).map(normalizeRoom);
-        const found = normalizedRooms.find((item) => item.id === Number(roomId)) ?? null;
-        if (!found) {
-          setError('Không tìm thấy tin đăng này.');
-          setRoom(null);
-          setMapRooms([]);
-          return;
-        }
-        setRoom(found);
-        setMapRooms(normalizedRooms);
+        const roomDetailResponse = await get<ApiResponse<Room>>(`/api/rooms/${Number(roomId)}`);
+        const detailRoom = normalizeRoom(roomDetailResponse.data);
+
+        const publicRoomsResponse = await get<ApiResponse<Room[]>>('/api/rooms/public/all');
+        const publicRooms = (publicRoomsResponse.data ?? []).map(normalizeRoom);
+        const mergedMapRooms = [detailRoom, ...publicRooms.filter((item) => item.id !== detailRoom.id)];
+
+        setRoom(detailRoom);
+        setMapRooms(mergedMapRooms);
         setActiveImage(0);
-        addRoomToViewedHistory(found);
+        addRoomToViewedHistory(detailRoom);
       } catch (fetchError) {
         setError(fetchError instanceof Error ? fetchError.message : 'Không thể tải chi tiết tin đăng.');
       } finally {

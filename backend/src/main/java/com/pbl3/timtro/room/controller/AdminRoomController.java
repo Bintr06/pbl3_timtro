@@ -21,4 +21,9 @@ public class AdminRoomController {
     public ResponseEntity<ApiResponse<List<RoomResponse>>> getAllRoomsForAdmin() {
         return ResponseEntity.ok(new ApiResponse<>(200, "Success", roomService.getAllRoomsForAdmin()));
     }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<RoomResponse>> getRoomDetailForAdmin(@PathVariable Long id) {
+        return ResponseEntity.ok(new ApiResponse<>(200, "Success", roomService.getRoomDetailForAdmin(id)));
+    }
 }

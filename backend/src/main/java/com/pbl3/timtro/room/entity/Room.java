@@ -49,6 +49,10 @@ public class Room {
     @Enumerated(EnumType.STRING)
     private RoomStatus status;
 
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean deleted = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id")
     private User owner;

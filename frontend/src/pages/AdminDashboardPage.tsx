@@ -157,7 +157,7 @@ const isUserRole = (role: AdminUser['role']) => {
 const LISTING_STATUS_OPTIONS = [
   { value: 'AVAILABLE', label: 'AVAILABLE' },
   { value: 'RENTED', label: 'RENTED' },
-  { value: 'HIDE', label: 'HIDE' },
+  { value: 'HIDE', label: 'HIDDEN' },
 ] as const;
 
 const normalizeRoom = (room: Room): Room => ({
@@ -251,7 +251,7 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'overview' | 'rooms' | 'accounts' | 'notifications' | 'reports' | 'ratings' | 'stats'>('overview');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'AVAILABLE' | 'RENTED' | 'HIDDEN'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'AVAILABLE' | 'RENTED' | 'REJECTED' | 'HIDDEN'>('ALL');
   const [roomTimeFilter, setRoomTimeFilter] = useState<'ALL' | 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS'>('ALL');
   const [roomSortBy, setRoomSortBy] = useState<'newest' | 'oldest'>('newest');
   const [roomPage, setRoomPage] = useState(1);
@@ -588,8 +588,10 @@ export default function AdminDashboardPage() {
   const statusSummary = useMemo(() => {
     return {
       total: rooms.length,
+      pending: rooms.filter((room) => room.status === 'PENDING').length,
       available: rooms.filter((room) => room.status === 'AVAILABLE').length,
       rented: rooms.filter((room) => room.status === 'RENTED').length,
+      rejected: rooms.filter((room) => room.status === 'REJECTED').length,
       hidden: rooms.filter((room) => room.status === 'HIDDEN').length,
     };
   }, [rooms]);
@@ -677,10 +679,12 @@ export default function AdminDashboardPage() {
 
   const dashboardStats = useMemo(() => {
     const total = statusSummary.total || 1;
+    const pendingRatio = Math.round((statusSummary.pending / total) * 100);
     const availableRatio = Math.round((statusSummary.available / total) * 100);
     const rentedRatio = Math.round((statusSummary.rented / total) * 100);
+    const rejectedRatio = Math.round((statusSummary.rejected / total) * 100);
     const hiddenRatio = Math.round((statusSummary.hidden / total) * 100);
-    return { availableRatio, rentedRatio, hiddenRatio };
+    return { pendingRatio, availableRatio, rentedRatio, rejectedRatio, hiddenRatio };
   }, [statusSummary]);
 
   const reportSummary = useMemo(() => {
@@ -1030,22 +1034,30 @@ export default function AdminDashboardPage() {
           {activeSection === 'rooms' && (
             <div className="space-y-5">
               {/* Status Summary */}
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <div className="rounded-3xl border border-blue-200/50 bg-gradient-to-br from-blue-50 to-cyan-50/30 p-4 shadow-sm">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                <div className="rounded-2xl border border-blue-200/50 bg-gradient-to-br from-blue-50 to-cyan-50/30 p-3 shadow-sm">
                   <p className="text-xs font-semibold text-blue-700">📦 Tổng tin</p>
-                  <p className="mt-2 text-2xl font-extrabold text-blue-900">{statusSummary.total}</p>
+                  <p className="mt-1 text-xl font-extrabold text-blue-900">{statusSummary.total}</p>
                 </div>
-                <div className="rounded-3xl border border-emerald-200/50 bg-gradient-to-br from-emerald-50 to-green-50/30 p-4 shadow-sm">
+                <div className="rounded-2xl border border-orange-200/50 bg-gradient-to-br from-orange-50 to-amber-50/30 p-3 shadow-sm">
+                  <p className="text-xs font-semibold text-orange-700">⏳ PENDING</p>
+                  <p className="mt-1 text-xl font-extrabold text-orange-700">{statusSummary.pending}</p>
+                </div>
+                <div className="rounded-2xl border border-emerald-200/50 bg-gradient-to-br from-emerald-50 to-green-50/30 p-3 shadow-sm">
                   <p className="text-xs font-semibold text-emerald-700">✅ AVAILABLE</p>
-                  <p className="mt-2 text-2xl font-extrabold text-emerald-700">{statusSummary.available}</p>
+                  <p className="mt-1 text-xl font-extrabold text-emerald-700">{statusSummary.available}</p>
                 </div>
-                <div className="rounded-3xl border border-amber-200/50 bg-gradient-to-br from-amber-50 to-yellow-50/30 p-4 shadow-sm">
+                <div className="rounded-2xl border border-amber-200/50 bg-gradient-to-br from-amber-50 to-yellow-50/30 p-3 shadow-sm">
                   <p className="text-xs font-semibold text-amber-700">🔓 RENTED</p>
-                  <p className="mt-2 text-2xl font-extrabold text-amber-700">{statusSummary.rented}</p>
+                  <p className="mt-1 text-xl font-extrabold text-amber-700">{statusSummary.rented}</p>
                 </div>
-                <div className="rounded-3xl border border-slate-300/50 bg-gradient-to-br from-slate-100 to-slate-50/30 p-4 shadow-sm">
+                <div className="rounded-2xl border border-rose-200/50 bg-gradient-to-br from-rose-50 to-pink-50/30 p-3 shadow-sm">
+                  <p className="text-xs font-semibold text-rose-700">❌ REJECTED</p>
+                  <p className="mt-1 text-xl font-extrabold text-rose-700">{statusSummary.rejected}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-300/50 bg-gradient-to-br from-slate-100 to-slate-50/30 p-3 shadow-sm">
                   <p className="text-xs font-semibold text-slate-700">🙈 HIDDEN</p>
-                  <p className="mt-2 text-2xl font-extrabold text-slate-700">{statusSummary.hidden}</p>
+                  <p className="mt-1 text-xl font-extrabold text-slate-700">{statusSummary.hidden}</p>
                 </div>
               </div>
 
@@ -1054,12 +1066,12 @@ export default function AdminDashboardPage() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <div>
                     <p className="mb-2 text-xs font-bold text-neutral-700">🔍 Trạng thái</p>
-                    <div className="flex flex-wrap gap-2">
-                      {(['ALL', 'AVAILABLE', 'RENTED', 'HIDDEN'] as const).map((item) => (
+                    <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                      {(['ALL', 'PENDING', 'AVAILABLE', 'RENTED', 'REJECTED', 'HIDDEN'] as const).map((item) => (
                         <button
                           key={item}
                           type="button"
-                          className={`h-9 rounded-xl border px-3 text-xs font-bold transition ${
+                          className={`h-9 shrink-0 rounded-xl border px-3 text-xs font-bold transition ${
                             statusFilter === item
                               ? 'border-orange-500 bg-orange-500 text-white'
                               : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
@@ -1131,8 +1143,10 @@ export default function AdminDashboardPage() {
                             className="h-20 w-full object-cover"
                           />
                           <div className="absolute right-1 top-1 rounded-lg bg-white/95 px-2 py-0.5 text-[10px] font-bold shadow-sm backdrop-blur-sm">
+                            {room.status === 'PENDING' && '⏳ Chờ duyệt'}
                             {room.status === 'AVAILABLE' && '✅ Sẵn sàng'}
                             {room.status === 'RENTED' && '🔓 Cho thuê'}
+                            {room.status === 'REJECTED' && '❌ Từ chối'}
                             {room.status === 'HIDDEN' && '🙈 Ẩn'}
                             {!room.status && '❓ Không xác định'}
                           </div>
@@ -1162,7 +1176,7 @@ export default function AdminDashboardPage() {
                             </p>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-1 pt-1">
+                          <div className="grid grid-cols-4 gap-1 pt-1">
                             <button
                               type="button"
                               className="inline-flex h-7 items-center justify-center rounded-lg border border-blue-300 bg-gradient-to-r from-blue-50 to-blue-100/50 px-1 text-[10px] font-bold text-blue-600"
@@ -1170,26 +1184,49 @@ export default function AdminDashboardPage() {
                             >
                               Chi tiết
                             </button>
-                            <select
-                              className="h-7 w-full rounded-lg border border-neutral-300 bg-white px-1 text-[10px] font-bold text-neutral-700 outline-none"
-                              value={room.status === 'HIDDEN' ? 'HIDE' : room.status || 'AVAILABLE'}
-                              onChange={(event) => onChangeStatus(room.id, event.target.value as 'AVAILABLE' | 'RENTED' | 'HIDE')}
-                              disabled={actionRoomId === room.id}
-                            >
-                              {LISTING_STATUS_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              className="inline-flex h-7 items-center justify-center rounded-lg border border-red-300 bg-gradient-to-r from-red-50 to-red-100/50 px-1 text-[10px] font-bold text-red-600 disabled:opacity-60"
-                              onClick={() => void onDeleteRoom(room.id)}
-                              disabled={actionRoomId === room.id}
-                            >
-                              Xóa
-                            </button>
+                            {room.status === 'PENDING' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-7 items-center justify-center rounded-lg border border-emerald-300 bg-gradient-to-r from-emerald-50 to-emerald-100/50 px-1 text-[10px] font-bold text-emerald-700 disabled:opacity-60"
+                                  onClick={() => void onChangeStatus(room.id, 'AVAILABLE')}
+                                  disabled={actionRoomId === room.id}
+                                >
+                                  Đồng ý
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-7 items-center justify-center rounded-lg border border-red-300 bg-gradient-to-r from-red-50 to-red-100/50 px-1 text-[10px] font-bold text-red-700 disabled:opacity-60"
+                                  onClick={() => void onChangeStatus(room.id, 'HIDE')}
+                                  disabled={actionRoomId === room.id}
+                                >
+                                  Từ chối
+                                </button>
+                              </>
+                            ) : (
+                              <select
+                                className="col-span-2 h-7 w-full rounded-lg border border-neutral-300 bg-white px-1 text-[10px] font-bold text-neutral-700 outline-none"
+                                value={room.status === 'HIDDEN' || room.status === 'REJECTED' ? 'HIDE' : room.status || 'AVAILABLE'}
+                                onChange={(event) => onChangeStatus(room.id, event.target.value as 'AVAILABLE' | 'RENTED' | 'HIDE')}
+                                disabled={actionRoomId === room.id}
+                              >
+                                {LISTING_STATUS_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {room.status !== 'PENDING' && (
+                              <button
+                                type="button"
+                                className="inline-flex h-7 items-center justify-center rounded-lg border border-red-300 bg-gradient-to-r from-red-50 to-red-100/50 px-1 text-[10px] font-bold text-red-600 disabled:opacity-60"
+                                onClick={() => void onDeleteRoom(room.id)}
+                                disabled={actionRoomId === room.id}
+                              >
+                                Xóa
+                              </button>
+                            )}
                           </div>
                         </div>
                       </article>
@@ -1663,8 +1700,10 @@ export default function AdminDashboardPage() {
                       <p className="text-sm font-bold text-neutral-900">Phân bố trạng thái tin đăng</p>
                       <div className="mt-3 space-y-2">
                         {[
+                          { label: 'PENDING', value: dashboardStats.pendingRatio, color: 'bg-orange-500' },
                           { label: 'AVAILABLE', value: dashboardStats.availableRatio, color: 'bg-emerald-500' },
                           { label: 'RENTED', value: dashboardStats.rentedRatio, color: 'bg-amber-500' },
+                          { label: 'REJECTED', value: dashboardStats.rejectedRatio, color: 'bg-rose-500' },
                           { label: 'HIDDEN', value: dashboardStats.hiddenRatio, color: 'bg-slate-500' },
                         ].map((item) => (
                           <div key={item.label}>

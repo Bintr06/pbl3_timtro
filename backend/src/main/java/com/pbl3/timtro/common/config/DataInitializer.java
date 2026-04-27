@@ -2,7 +2,6 @@ package com.pbl3.timtro.common.config;
 
 import com.pbl3.timtro.room.entity.Amenity;
 import com.pbl3.timtro.room.repository.AmenityRepository;
-import com.pbl3.timtro.room.repository.RoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -17,16 +16,10 @@ import java.util.Optional;
 public class DataInitializer implements CommandLineRunner {
 
     private final AmenityRepository amenityRepository;
-    private final RoomRepository roomRepository;
 
     @Override
     @Transactional
     public void run(String... args) {
-        int migratedRooms = roomRepository.migratePendingToAvailable();
-        if (migratedRooms > 0) {
-            System.out.println(">> Đã chuyển " + migratedRooms + " tin từ PENDING sang AVAILABLE.");
-        }
-
         Map<String, String> requiredAmenities = new LinkedHashMap<>();
         requiredAmenities.put("Wifi", "wifi");
         requiredAmenities.put("Điều hòa", "ac_unit");
@@ -35,7 +28,6 @@ public class DataInitializer implements CommandLineRunner {
         requiredAmenities.put("Gác lửng", "stairs");
         requiredAmenities.put("Máy giặt", "local_laundry_service");
         requiredAmenities.put("Giờ giấc tự do", "schedule");
-        requiredAmenities.put("Tủ lạnh", "kitchen");
 
         int createdCount = 0;
 
