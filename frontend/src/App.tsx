@@ -7,6 +7,8 @@ import { MapContainer, Marker, TileLayer, Tooltip, useMapEvents } from 'react-le
 import { del, get, getAuthToken, post, postFormData, put, putFormData } from './apiClient';
 import Header from './components/Header';
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import BuyTurnsPage from './pages/BuyTurnsPage';
+import PurchaseHistoryPage from './pages/PurchaseHistoryPage';
 
 type Room = {
   id: number;
@@ -777,6 +779,8 @@ function App() {
           <Route path="/profile/:userId" element={isLoggedIn ? <UserProfilePage /> : <Navigate to="/" replace />} />
           <Route path="/favorites" element={isLoggedIn ? <FavoriteRoomsPage /> : <Navigate to="/" replace />} />
           <Route path="/account" element={isLoggedIn ? <AccountSettingsPage /> : <Navigate to="/" replace />} />
+          <Route path="/buy-turns" element={isLoggedIn ? <BuyTurnsPage /> : <Navigate to="/" replace />} />
+          <Route path="/personal" element={isLoggedIn ? <PurchaseHistoryPage /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={adminRouteElement} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -1290,6 +1294,7 @@ function MyListingsPage() {
                 </div>
                 <p className="text-base font-extrabold text-[#d0021b]">{formatPricePerMonth(room.price ?? 0)}</p>
                 <p className="line-clamp-1 text-xs text-neutral-600">📍 {room.province || 'Đang cập nhật'}</p>
+                <p className="text-xs text-neutral-500">🕒 {room.createdAt ? new Date(room.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Không rõ thời gian'}</p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
@@ -1299,20 +1304,24 @@ function MyListingsPage() {
                   >
                     Sửa tin
                   </button>
-                  <select
-                    className="h-9 rounded-xl border border-neutral-300 bg-white px-2 text-xs font-semibold text-neutral-700 outline-none"
-                    value={room.status === 'HIDDEN' ? 'HIDE' : room.status || 'AVAILABLE'}
-                    onChange={(event) =>
-                      onChangeListingStatus(room.id, event.target.value as 'AVAILABLE' | 'RENTED' | 'HIDE')
-                    }
-                    disabled={actionRoomId === room.id}
-                  >
-                    {LISTING_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+
+                  {['AVAILABLE', 'RENTED', 'HIDDEN'].includes(room.status || '') && (
+                    <select
+                      className="h-9 rounded-xl border border-neutral-300 bg-white px-2 text-xs font-semibold text-neutral-700 outline-none"
+                      value={room.status === 'HIDDEN' ? 'HIDE' : room.status || 'AVAILABLE'}
+                      onChange={(event) =>
+                        onChangeListingStatus(room.id, event.target.value as 'AVAILABLE' | 'RENTED' | 'HIDE')
+                      }
+                      disabled={actionRoomId === room.id}
+                    >
+                      {LISTING_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                   <button
                     type="button"
                     className="inline-flex h-9 items-center justify-center rounded-xl border border-red-300 px-3 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"

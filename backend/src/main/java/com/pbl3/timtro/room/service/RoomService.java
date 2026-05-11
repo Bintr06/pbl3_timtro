@@ -1,6 +1,7 @@
 package com.pbl3.timtro.room.service;
 
 import com.pbl3.timtro.common.service.CloudinaryService;
+import com.pbl3.timtro.room.dto.response.QuotaResponse;
 import com.pbl3.timtro.favorite.repository.FavoriteRepository;
 import com.pbl3.timtro.notification.service.NotificationService;
 import com.pbl3.timtro.room.dto.request.RoomDeleteRequest;
@@ -11,6 +12,7 @@ import com.pbl3.timtro.room.dto.response.RoomResponse;
 import com.pbl3.timtro.room.entity.Amenity;
 import com.pbl3.timtro.room.entity.Room;
 import com.pbl3.timtro.room.entity.RoomImage;
+import com.pbl3.timtro.room.enums.CreditSource;
 import com.pbl3.timtro.room.enums.RoomStatus;
 import com.pbl3.timtro.room.repository.AmenityRepository;
 import com.pbl3.timtro.room.repository.RoomRepository;
@@ -33,12 +35,14 @@ import java.util.Map;
 import java.util.Set;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.YearMonth;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class RoomService {
     private static final ZoneId APP_ZONE_ID = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final int MAX_POSTS_PER_MONTH = 3;
 
     private final RoomRepository roomRepository;
     private final AmenityRepository amenityRepository;
@@ -58,6 +62,9 @@ public class RoomService {
     public void createRoom(RoomRequest request, List<MultipartFile> files, User owner) {
         User managedOwner = userRepository.findById(owner.getId())
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+        ensureMonthlyCreditsInitialized(managedOwner);
+        CreditSource creditSource = consumeOneTurn(managedOwner);
+        userRepository.save(managedOwner);
 
         Room room = Room.builder()
                 .title(request.getTitle())
@@ -72,6 +79,7 @@ public class RoomService {
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .status(RoomStatus.PENDING)
+                .creditSource(creditSource)
                 .owner(managedOwner)
                 .build();
 
@@ -100,6 +108,45 @@ public class RoomService {
         roomRepository.save(room);
     }
 
+    private void ensureMonthlyCreditsInitialized(User user) {
+        String currentMonthKey = YearMonth.now(APP_ZONE_ID).toString();
+        if (user.getMonthlyCredits() == null) {
+            user.setMonthlyCredits(0);
+        }
+        if (user.getPostCredits() == null) {
+            user.setPostCredits(0);
+        }
+        if (!currentMonthKey.equals(user.getMonthlyCreditsResetMonth())) {
+            user.setMonthlyCredits(MAX_POSTS_PER_MONTH);
+            user.setMonthlyCreditsResetMonth(currentMonthKey);
+        }
+    }
+
+    private CreditSource consumeOneTurn(User user) {
+        ensureMonthlyCreditsInitialized(user);
+        if (user.getMonthlyCredits() > 0) {
+            user.setMonthlyCredits(user.getMonthlyCredits() - 1);
+            return CreditSource.MONTHLY;
+        }
+        if (user.getPostCredits() > 0) {
+            user.setPostCredits(user.getPostCredits() - 1);
+            return CreditSource.PERMANENT;
+        }
+        throw new RuntimeException("Bạn không đủ lượt để đăng tin. Hãy mua thêm lượt hoặc chờ lượt tháng mới.");
+    }
+
+    private void refundOneTurn(User user, CreditSource creditSource) {
+        if (creditSource == null) {
+            return;
+        }
+        if (creditSource == CreditSource.MONTHLY) {
+            ensureMonthlyCreditsInitialized(user);
+            user.setMonthlyCredits(Math.min(MAX_POSTS_PER_MONTH, user.getMonthlyCredits() + 1));
+            return;
+        }
+        user.setPostCredits((user.getPostCredits() != null ? user.getPostCredits() : 0) + 1);
+    }
+
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof User) {
@@ -122,6 +169,39 @@ public class RoomService {
                 .distinct()
                 .toList();
         return mapRoomsToResponses(rooms, currentUser);
+    }
+
+    public int getRemainingPostsForCurrentUser() {
+        return getQuotaForCurrentUser().getTotalCreditsRemaining();
+    }
+
+    public QuotaResponse getQuotaForCurrentUser() {
+        User currentUser = getCurrentUser();
+        if (currentUser == null) {
+            return QuotaResponse.builder()
+                    .monthlyCreditsRemaining(MAX_POSTS_PER_MONTH)
+                    .permanentCreditsRemaining(0)
+                    .totalCreditsRemaining(MAX_POSTS_PER_MONTH)
+                    .monthlyCreditsUsed(0)
+                    .build();
+        }
+
+                User managedUser = userRepository.findById(currentUser.getId())
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+                ensureMonthlyCreditsInitialized(managedUser);
+                userRepository.save(managedUser);
+
+                int monthlyRemaining = managedUser.getMonthlyCredits();
+                int permanentRemaining = managedUser.getPostCredits() != null ? managedUser.getPostCredits() : 0;
+                int monthlyUsed = Math.max(0, MAX_POSTS_PER_MONTH - monthlyRemaining);
+        int totalRemaining = monthlyRemaining + permanentRemaining;
+        
+        return QuotaResponse.builder()
+                .monthlyCreditsRemaining(monthlyRemaining)
+                .permanentCreditsRemaining(permanentRemaining)
+                .totalCreditsRemaining(totalRemaining)
+                .monthlyCreditsUsed(monthlyUsed)
+                .build();
     }
 
         public RoomResponse getRoomDetail(Long roomId, User currentUser) {
@@ -279,7 +359,7 @@ public class RoomService {
     }
 
     @Transactional
-    public void updateRoomStatus(Long roomId, String status, User currentUser) {
+    public void updateRoomStatus(Long roomId, String status, String rejectionReason, User currentUser) {
         Room room = roomRepository.findByIdAndDeletedFalse(roomId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy phòng!"));
 
@@ -290,6 +370,8 @@ public class RoomService {
         if (!isOwner && !isAdmin) {
             throw new RuntimeException("Bạn không có quyền thay đổi trạng thái phòng này!");
         }
+
+        RoomStatus previousStatus = room.getStatus();
 
         String normalizedStatus = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
         RoomStatus nextStatus;
@@ -312,6 +394,38 @@ public class RoomService {
         }
 
         room.setStatus(nextStatus);
+
+        if (isAdmin && previousStatus == RoomStatus.PENDING && nextStatus == RoomStatus.REJECTED) {
+            String reason = rejectionReason == null ? "" : rejectionReason.trim();
+            if (reason.isBlank()) {
+                throw new RuntimeException("Vui lòng nhập lý do từ chối tin.");
+            }
+
+            User owner = userRepository.findById(room.getOwner().getId())
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+            refundOneTurn(owner, room.getCreditSource());
+            room.setCreditSource(null);
+            userRepository.save(owner);
+
+            String roomTitle = room.getTitle() == null || room.getTitle().isBlank() ? "#" + room.getId() : room.getTitle();
+            notificationService.sendSystemNotificationToUser(
+                    owner,
+                    "Tin đăng đã bị từ chối",
+                    "Tin đăng \"" + roomTitle + "\" đã bị từ chối. Lý do: " + reason
+            );
+                } else if (isAdmin && previousStatus == RoomStatus.PENDING && nextStatus == RoomStatus.AVAILABLE) {
+                    User owner = userRepository.findById(room.getOwner().getId())
+                        .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+                    String roomTitle = room.getTitle() == null || room.getTitle().isBlank() ? "#" + room.getId() : room.getTitle();
+                    notificationService.sendSystemNotificationToUser(
+                        owner,
+                        "Tin đăng đã được duyệt",
+                        "Tin đăng \"" + roomTitle + "\" đã được duyệt và đăng thành công trên hệ thống."
+                    );
+        } else if (room.getCreditSource() != null) {
+            room.setCreditSource(null);
+        }
+
         roomRepository.save(room);
     }
 
@@ -322,6 +436,17 @@ public class RoomService {
 
         if (!room.getOwner().getId().equals(currentUser.getId())) {
             throw new RuntimeException("Bạn không có quyền sửa phòng này!");
+        }
+
+        RoomStatus previousStatus = room.getStatus();
+        User managedOwner = userRepository.findById(currentUser.getId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng!"));
+
+        if (previousStatus == RoomStatus.AVAILABLE || previousStatus == RoomStatus.RENTED || previousStatus == RoomStatus.HIDDEN) {
+            ensureMonthlyCreditsInitialized(managedOwner);
+            CreditSource creditSource = consumeOneTurn(managedOwner);
+            room.setCreditSource(creditSource);
+            userRepository.save(managedOwner);
         }
 
         room.setTitle(request.getTitle());

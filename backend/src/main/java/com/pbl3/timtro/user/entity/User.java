@@ -58,6 +58,17 @@ public class User implements UserDetails {
 
     @Builder.Default
     @Column(nullable = false)
+    private Integer postCredits = 0;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Integer monthlyCredits = 0;
+
+    @Column(length = 7)
+    private String monthlyCreditsResetMonth;
+
+    @Builder.Default
+    @Column(nullable = false)
     private boolean enabled = true;
 
     @Builder.Default

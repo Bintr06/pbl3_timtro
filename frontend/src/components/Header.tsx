@@ -44,10 +44,17 @@ type CurrentUserProfile = {
   role?: string | null;
 };
 
+type QuotaResponse = {
+  monthlyCreditsRemaining: number;
+  permanentCreditsRemaining: number;
+  totalCreditsRemaining: number;
+  monthlyCreditsUsed: number;
+};
+
 type RoomCreateResponse = {
   status: number;
   message: string;
-  data: null;
+  data: QuotaResponse;
 };
 
 type SystemNotification = {
@@ -203,6 +210,15 @@ function MenuIconLogout() {
   );
 }
 
+function MenuIconBuyTurns() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2v20" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
 function Header() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [mode, setMode] = useState<AuthMode>('login');
@@ -239,6 +255,7 @@ function Header() {
   const [isPostingRoom, setIsPostingRoom] = useState(false);
   const [postRoomError, setPostRoomError] = useState<string | null>(null);
   const [postRoomMessage, setPostRoomMessage] = useState<string | null>(null);
+  const [remainingPosts, setRemainingPosts] = useState<QuotaResponse | null>(null);
   const [postRoomForm, setPostRoomForm] = useState({
     title: '',
     description: '',
@@ -550,6 +567,16 @@ function Header() {
       } catch {
         if (!cancelled) {
           setAmenities([]);
+        }
+      }
+      try {
+        const q = await get<ApiResponse<QuotaResponse>>('/api/rooms/quota');
+        if (!cancelled) {
+          setRemainingPosts(q.data ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setRemainingPosts(null);
         }
       }
     })();
@@ -973,6 +1000,9 @@ function Header() {
 
       const res = await postFormData<RoomCreateResponse>('/api/rooms', formData);
       setPostRoomMessage(res.message || 'Đăng tin thành công.');
+      if (res.data) {
+        setRemainingPosts(res.data);
+      }
       setPostRoomForm({
         title: '',
         description: '',
@@ -1438,6 +1468,32 @@ function Header() {
                   className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
                   onClick={() => {
                     setIsAccountMenuOpen(false);
+                    navigate('/buy-turns');
+                  }}
+                >
+                  <AccountMenuItemIcon>
+                    <MenuIconBuyTurns />
+                  </AccountMenuItemIcon>
+                  <span>Mua lượt đăng tin</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                  onClick={() => {
+                    setIsAccountMenuOpen(false);
+                    navigate('/personal');
+                  }}
+                >
+                  <AccountMenuItemIcon>
+                    <MenuIconHistory />
+                  </AccountMenuItemIcon>
+                  <span>Lịch sử mua lượt</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50"
+                  onClick={() => {
+                    setIsAccountMenuOpen(false);
                     navigate('/account');
                   }}
                 >
@@ -1859,6 +1915,13 @@ function Header() {
                   }`}
                 >
                   {selectedCoordinates ? 'Đã chọn vị trí map' : 'Chưa chọn vị trí map'}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-700 ring-1 ring-orange-100">
+                  {remainingPosts === null ? '—' : (
+                    <span>
+                      Lượt tháng: {remainingPosts.monthlyCreditsRemaining} | Lượt mua: {remainingPosts.permanentCreditsRemaining} | Tổng: {remainingPosts.totalCreditsRemaining}
+                    </span>
+                  )}
                 </span>
               </div>
             </div>

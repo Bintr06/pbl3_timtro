@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { del, get, post, put } from '../apiClient';
+import PurchaseManagementTab from '../components/PurchaseManagementTab';
 
 type Room = {
   id: number;
@@ -120,7 +121,8 @@ const sectionItems = [
   { key: 'overview', label: 'Overview', icon: '📊' },
   { key: 'accounts', label: 'Quản lí người dùng', icon: '👤' },
   { key: 'rooms', label: 'Quản lí tin đăng', icon: '🏠' },
-    { key: 'notifications', label: 'Thông báo', icon: '📣' },
+  { key: 'purchases', label: 'Quản lí mua lượt', icon: '💳' },
+  { key: 'notifications', label: 'Thông báo', icon: '📣' },
   { key: 'reports', label: 'Báo cáo vi phạm', icon: '🚩' },
   { key: 'ratings', label: 'Quản lý đánh giá', icon: '⭐' },
   { key: 'stats', label: 'Thống kê', icon: '📈' },
@@ -158,6 +160,7 @@ const LISTING_STATUS_OPTIONS = [
   { value: 'AVAILABLE', label: 'AVAILABLE' },
   { value: 'RENTED', label: 'RENTED' },
   { value: 'HIDE', label: 'HIDDEN' },
+  { value: 'REJECT', label: 'REJECTED' },
 ] as const;
 
 const normalizeRoom = (room: Room): Room => ({
@@ -250,12 +253,15 @@ export default function AdminDashboardPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'overview' | 'rooms' | 'accounts' | 'notifications' | 'reports' | 'ratings' | 'stats'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'rooms' | 'accounts' | 'notifications' | 'reports' | 'ratings' | 'purchases' | 'stats'>('overview');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'AVAILABLE' | 'RENTED' | 'REJECTED' | 'HIDDEN'>('ALL');
   const [roomTimeFilter, setRoomTimeFilter] = useState<'ALL' | 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS'>('ALL');
   const [roomSortBy, setRoomSortBy] = useState<'newest' | 'oldest'>('newest');
   const [roomPage, setRoomPage] = useState(1);
   const [actionRoomId, setActionRoomId] = useState<number | null>(null);
+  const [rejectRoomId, setRejectRoomId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectReasonError, setRejectReasonError] = useState<string | null>(null);
   const [userReports, setUserReports] = useState<UserReportItem[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
   const [reportActionId, setReportActionId] = useState<number | null>(null);
@@ -606,10 +612,14 @@ export default function AdminDashboardPage() {
     }
   }, [roomPage, totalRoomPages]);
 
-  const onChangeStatus = async (roomId: number, nextStatus: 'AVAILABLE' | 'RENTED' | 'HIDE') => {
+  const onChangeStatus = async (roomId: number, nextStatus: 'AVAILABLE' | 'RENTED' | 'HIDE' | 'REJECT', rejectionReason?: string) => {
     try {
       setActionRoomId(roomId);
-      await put<string>(`/api/rooms/${roomId}/status?status=${encodeURIComponent(nextStatus)}`);
+      const params = new URLSearchParams({ status: nextStatus });
+      if (nextStatus === 'REJECT') {
+        params.set('rejectionReason', rejectionReason || '');
+      }
+      await put<string>(`/api/rooms/${roomId}/status?${params.toString()}`);
       await loadAdminRooms();
       window.dispatchEvent(new CustomEvent('room-posted'));
     } catch (changeError) {
@@ -618,6 +628,34 @@ export default function AdminDashboardPage() {
     } finally {
       setActionRoomId(null);
     }
+  };
+
+  const openRejectRoomModal = (roomId: number) => {
+    setRejectRoomId(roomId);
+    setRejectReason('');
+    setRejectReasonError(null);
+  };
+
+  const closeRejectRoomModal = () => {
+    setRejectRoomId(null);
+    setRejectReason('');
+    setRejectReasonError(null);
+  };
+
+  const confirmRejectRoom = async () => {
+    if (!rejectRoomId) {
+      return;
+    }
+
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setRejectReasonError('Vui lòng nhập lý do từ chối tin.');
+      return;
+    }
+
+    setRejectReasonError(null);
+    await onChangeStatus(rejectRoomId, 'REJECT', reason);
+    closeRejectRoomModal();
   };
 
   const onDeleteRoom = async (roomId: number) => {
@@ -891,7 +929,7 @@ export default function AdminDashboardPage() {
                       ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
                       : 'bg-white/5 text-slate-100 hover:bg-white/15 hover:text-white'
                   }`}
-                  onClick={() => setActiveSection(item.key as 'overview' | 'rooms' | 'accounts' | 'notifications' | 'reports' | 'ratings' | 'stats')}
+                  onClick={() => setActiveSection(item.key as 'overview' | 'rooms' | 'accounts' | 'notifications' | 'reports' | 'ratings' | 'purchases' | 'stats')}
                 >
                   <span>{item.icon}</span>
                   <span>{item.label}</span>
@@ -1170,7 +1208,7 @@ export default function AdminDashboardPage() {
                               <span>🗓️</span>
                               <span>
                                 {room.createdAt
-                                  ? new Date(room.createdAt).toLocaleDateString('vi-VN')
+                                  ? new Date(room.createdAt).toLocaleString('vi-VN')
                                   : 'Không rõ thời gian'}
                               </span>
                             </p>
@@ -1197,7 +1235,7 @@ export default function AdminDashboardPage() {
                                 <button
                                   type="button"
                                   className="inline-flex h-7 items-center justify-center rounded-lg border border-red-300 bg-gradient-to-r from-red-50 to-red-100/50 px-1 text-[10px] font-bold text-red-700 disabled:opacity-60"
-                                  onClick={() => void onChangeStatus(room.id, 'HIDE')}
+                                  onClick={() => openRejectRoomModal(room.id)}
                                   disabled={actionRoomId === room.id}
                                 >
                                   Từ chối
@@ -1206,8 +1244,15 @@ export default function AdminDashboardPage() {
                             ) : (
                               <select
                                 className="col-span-2 h-7 w-full rounded-lg border border-neutral-300 bg-white px-1 text-[10px] font-bold text-neutral-700 outline-none"
-                                value={room.status === 'HIDDEN' || room.status === 'REJECTED' ? 'HIDE' : room.status || 'AVAILABLE'}
-                                onChange={(event) => onChangeStatus(room.id, event.target.value as 'AVAILABLE' | 'RENTED' | 'HIDE')}
+                                value={room.status === 'HIDDEN' ? 'HIDE' : room.status === 'REJECTED' ? 'REJECT' : room.status || 'AVAILABLE'}
+                                onChange={(event) => {
+                                  const nextStatus = event.target.value as 'AVAILABLE' | 'RENTED' | 'HIDE' | 'REJECT';
+                                  if (nextStatus === 'REJECT') {
+                                    openRejectRoomModal(room.id);
+                                    return;
+                                  }
+                                  void onChangeStatus(room.id, nextStatus);
+                                }}
                                 disabled={actionRoomId === room.id}
                               >
                                 {LISTING_STATUS_OPTIONS.map((option) => (
@@ -1666,6 +1711,10 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
+          {activeSection === 'purchases' && (
+            <PurchaseManagementTab isOpen={activeSection === 'purchases'} />
+          )}
+
           {activeSection === 'stats' && (
             <div className="space-y-4">
               {statsBusy ? (
@@ -2005,6 +2054,65 @@ export default function AdminDashboardPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {rejectRoomId !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm">
+              <div className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-neutral-900">Từ chối tin đăng</p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {rooms.find((room) => room.id === rejectRoomId)?.title || 'Tin đăng này'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-full border border-neutral-300 px-2 py-1 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                    onClick={closeRejectRoomModal}
+                  >
+                    Đóng
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-neutral-700">Lý do từ chối</span>
+                    <textarea
+                      value={rejectReason}
+                      onChange={(event) => {
+                        setRejectReason(event.target.value);
+                        if (rejectReasonError) {
+                          setRejectReasonError(null);
+                        }
+                      }}
+                      rows={4}
+                      placeholder="Nhập lý do để gửi thông báo cho chủ tin..."
+                      className="w-full rounded-2xl border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                    />
+                  </label>
+                  {rejectReasonError && <p className="text-xs font-semibold text-red-600">{rejectReasonError}</p>}
+                </div>
+
+                <div className="mt-5 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+                    onClick={closeRejectRoomModal}
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                    onClick={() => void confirmRejectRoom()}
+                    disabled={actionRoomId === rejectRoomId}
+                  >
+                    {actionRoomId === rejectRoomId ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

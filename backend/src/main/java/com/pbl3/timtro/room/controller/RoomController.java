@@ -6,6 +6,7 @@ import com.pbl3.timtro.room.dto.request.RoomDeleteRequest;
 import com.pbl3.timtro.room.dto.request.RoomUpdateRequest;
 import com.pbl3.timtro.room.dto.response.AmenityResponse;
 import com.pbl3.timtro.room.dto.response.RoomResponse;
+import com.pbl3.timtro.room.dto.response.QuotaResponse;
 import com.pbl3.timtro.room.service.RoomService;
 import com.pbl3.timtro.user.entity.User;
 import jakarta.validation.Valid;
@@ -27,13 +28,14 @@ public class RoomController {
 
     @PostMapping(consumes = {"multipart/form-data"})
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<String>> createRoom(
+    public ResponseEntity<ApiResponse<QuotaResponse>> createRoom(
             @Valid @RequestPart("room") RoomRequest request,
             @RequestPart("files") List<MultipartFile> files,
             @AuthenticationPrincipal User currentUser
     ) {
         roomService.createRoom(request, files, currentUser);
-        return ResponseEntity.ok(new ApiResponse<>(200, "Đăng tin thành công, vui lòng chờ duyệt!", null));
+        QuotaResponse quota = roomService.getQuotaForCurrentUser();
+        return ResponseEntity.ok(new ApiResponse<>(200, "Đăng tin thành công, vui lòng chờ duyệt!", quota));
     }
 
     @GetMapping("/public/all")
@@ -88,9 +90,17 @@ public class RoomController {
     public ResponseEntity<String> updateRoomStatus(
             @PathVariable Long id,
             @RequestParam String status,
+            @RequestParam(required = false) String rejectionReason,
             @AuthenticationPrincipal User currentUser
     ) {
-        roomService.updateRoomStatus(id, status, currentUser);
+        roomService.updateRoomStatus(id, status, rejectionReason, currentUser);
         return ResponseEntity.ok("Cập nhật trạng thái phòng thành công!");
+    }
+
+    @GetMapping("/quota")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<QuotaResponse>> getQuota() {
+        QuotaResponse quota = roomService.getQuotaForCurrentUser();
+        return ResponseEntity.ok(new ApiResponse<>(200, "Success", quota));
     }
 }

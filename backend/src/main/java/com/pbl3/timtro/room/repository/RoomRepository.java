@@ -68,6 +68,7 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
                         LocalDateTime toDateTime,
                         RoomStatus excludedStatus
         );
+                long countByOwnerIdAndDeletedFalseAndCreatedAtBetween(Long ownerId, LocalDateTime fromDateTime, LocalDateTime toDateTime);
 
         @Query("SELECT DISTINCT r FROM Room r " +
                         "LEFT JOIN FETCH r.owner " +

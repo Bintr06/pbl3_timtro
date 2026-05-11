@@ -1,5 +1,6 @@
 package com.pbl3.timtro.room.entity;
 import com.pbl3.timtro.room.enums.RoomStatus;
+import com.pbl3.timtro.room.enums.CreditSource;
 import com.pbl3.timtro.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -48,6 +49,10 @@ public class Room {
 
     @Enumerated(EnumType.STRING)
     private RoomStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private CreditSource creditSource;
 
     @Builder.Default
     @Column(nullable = false)
