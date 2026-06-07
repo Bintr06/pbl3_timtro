@@ -14,6 +14,10 @@ public class OverviewStatsDto {
     private long pendingReports;
     private double averageRating;
 
+    private long totalPurchases;
+    private double totalRevenue;
+
+    private List<DailyStatsDto> newPurchasesByDay;
     private List<DailyStatsDto> newUsersByDay;
     private List<DailyStatsDto> newRoomsByDay;
 }

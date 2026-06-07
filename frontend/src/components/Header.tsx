@@ -232,6 +232,19 @@ function Header() {
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const handleNotificationClick = async (notification: any) => {
+
+    await put(`/api/notifications/${notification.id}/read`);
+
+    if (notification.title.includes('Lịch hẹn xem phòng mới')) {
+      navigate('/my-listings');
+    } else if (notification.title.includes('Kết quả đặt lịch')) {
+      navigate('/profile'); // Sửa lại đường dẫn này nếu trang profile của bạn cần ID (VD: /profile/me)
+    } else {
+      console.log('Không có đường dẫn cụ thể cho thông báo này');
+    }
+  };
+
   const [loginForm, setLoginForm] = useState({ identifier: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     username: '',
@@ -1299,6 +1312,11 @@ function Header() {
                             setSelectedNotificationId(item.id);
                             if (!item.read) {
                               void markNotificationAsRead(item.id);
+                            }
+                            if (item.title.includes('Lịch hẹn xem phòng mới')) {
+                              navigate('/my-listings');
+                            } else if (item.title.includes('Kết quả đặt lịch')) {
+                              navigate('/profile');
                             }
                           }}
                         >

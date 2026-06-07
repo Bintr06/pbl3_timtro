@@ -22,6 +22,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
+import com.google.api.client.util.Clock;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,8 +30,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -43,8 +43,10 @@ import java.util.Random;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.Arrays;
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class AuthService {
     private static final NetHttpTransport GOOGLE_HTTP_TRANSPORT = new NetHttpTransport();
     private static final GsonFactory GOOGLE_JSON_FACTORY = GsonFactory.getDefaultInstance();
@@ -108,20 +110,12 @@ public class AuthService {
 
     @Transactional
     public AuthResponse loginWithGoogle(GoogleLoginRequest request) {
-        if (googleOauthClientId == null || googleOauthClientId.isBlank()) {
+        List<String> googleClientIds = parseGoogleClientIds();
+        if (googleClientIds.isEmpty()) {
             throw new RuntimeException("Đăng nhập Google chưa được cấu hình ở máy chủ");
         }
 
-        GoogleIdToken idToken;
-        try {
-            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(GOOGLE_HTTP_TRANSPORT, GOOGLE_JSON_FACTORY)
-                    .setAudience(Collections.singletonList(googleOauthClientId))
-                    .build();
-            idToken = verifier.verify(request.getIdToken().trim());
-        } catch (Exception e) {
-            throw new RuntimeException("Không thể xác minh Google token");
-        }
-
+        GoogleIdToken idToken = verifyGoogleIdToken(request.getIdToken(), googleClientIds);
         if (idToken == null) {
             throw new RuntimeException("Google token không hợp lệ");
         }
@@ -451,5 +445,46 @@ public class AuthService {
                 Neu ban khong thuc hien yeu cau nay, vui long bo qua email.
                 """.formatted(code));
         mailSender.send(message);
+    }
+
+    private GoogleIdToken verifyGoogleIdToken(String rawIdToken, List<String> googleClientIds) {
+        if (rawIdToken == null || rawIdToken.isBlank()) {
+            return null;
+        }
+
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(GOOGLE_HTTP_TRANSPORT, GOOGLE_JSON_FACTORY)
+                    .setAudience(googleClientIds)
+                    .setIssuers(List.of("https://accounts.google.com", "accounts.google.com"))
+                    .setClock(Clock.SYSTEM)
+                    .setAcceptableTimeSkewSeconds(60)
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(rawIdToken.trim());
+            if (idToken == null) {
+                return null;
+            }
+
+            GoogleIdToken.Payload payload = idToken.getPayload();
+            String authorizedParty = payload.getAuthorizedParty();
+            if (authorizedParty != null && !googleClientIds.contains(authorizedParty)) {
+                return null;
+            }
+
+            return idToken;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<String> parseGoogleClientIds() {
+        if (googleOauthClientId == null || googleOauthClientId.isBlank()) {
+            return List.of();
+        }
+
+        return Arrays.stream(googleOauthClientId.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
     }
 }

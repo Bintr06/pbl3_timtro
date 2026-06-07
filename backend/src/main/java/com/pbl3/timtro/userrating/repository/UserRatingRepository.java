@@ -9,7 +9,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface UserRatingRepository extends JpaRepository<UserRating, Long> {
-
+    @Query("SELECT AVG(r.stars) FROM UserRating r")
+    Double getAverageRatingAllLandlords();
     boolean existsByRaterIdAndRatedUserId(Long raterId, Long ratedUserId);
 
     @EntityGraph(attributePaths = {"rater", "ratedUser"})

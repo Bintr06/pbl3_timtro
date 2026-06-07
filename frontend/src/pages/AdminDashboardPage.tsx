@@ -54,6 +54,9 @@ type OverviewStats = {
   availableRooms: number;
   pendingReports: number;
   averageRating: number;
+  totalPurchases: number;
+  totalRevenue: number;
+  newPurchasesByDay: DailyStats[];
   newUsersByDay: DailyStats[];
   newRoomsByDay: DailyStats[];
 };
@@ -1016,6 +1019,20 @@ export default function AdminDashboardPage() {
                         <span className="text-3xl font-extrabold text-amber-800">{overviewStats.averageRating.toFixed(1)}</span>
                         <span className="text-lg text-amber-600">★</span>
                       </p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 mt-4">
+                      <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+                        <p className="text-xs font-semibold text-emerald-600">Tổng doanh thu</p>
+                        <p className="mt-2 text-2xl font-extrabold text-emerald-800">
+                          {overviewStats.totalRevenue.toLocaleString('vi-VN')} VNĐ
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white p-4 shadow-sm">
+                        <p className="text-xs font-semibold text-orange-600">Tổng lượt mua tin</p>
+                        <p className="mt-2 text-2xl font-extrabold text-orange-800">
+                          {overviewStats.totalPurchases} đơn
+                        </p>
+                      </div>
                     </div>
                   </div>
 

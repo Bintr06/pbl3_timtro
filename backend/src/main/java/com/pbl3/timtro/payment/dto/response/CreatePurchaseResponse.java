@@ -23,4 +23,5 @@ public class CreatePurchaseResponse {
     private String bankName;
     private PurchaseStatus status;
     private LocalDateTime createdAt;
+    private String payUrl;
 }

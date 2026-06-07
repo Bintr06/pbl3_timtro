@@ -9,12 +9,14 @@ import Header from './components/Header';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import BuyTurnsPage from './pages/BuyTurnsPage';
 import PurchaseHistoryPage from './pages/PurchaseHistoryPage';
-
+import LandlordAppointmentsTab from './components/LandlordAppointmentsTab';
+import BookingForm from './components/BookingForm';
+import UserAppointmentsTab from './components/UserAppointmentsTab';
 type Room = {
   id: number;
   title: string;
   description?: string;
-  price: number;
+  price: number;F
   createdAt?: string;
   area?: number;
   address?: string | null;
@@ -938,6 +940,7 @@ function MyListingsPage() {
   const [selectedEditWardCode, setSelectedEditWardCode] = useState<number | null>(null);
   const [isEditMapPickerOpen, setIsEditMapPickerOpen] = useState(false);
   const [editMapCenter, setEditMapCenter] = useState<[number, number]>([16.047079, 108.20623]);
+  const [activeTab, setActiveTab] = useState<'rooms' | 'appointments'>('rooms');
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
@@ -1265,9 +1268,35 @@ function MyListingsPage() {
   return (
     <section className="space-y-5">
       <div className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Quản lý tin</p>
-        <h1 className="mt-2 text-2xl font-bold text-neutral-900">Tin của tôi</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Quản lý không gian</p>
+        <h1 className="mt-2 text-2xl font-bold text-neutral-900">Dashboard Chủ Trọ</h1>
+
+        <div className="mt-4 flex gap-2">
+          <button
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === 'rooms'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+              }`}
+              onClick={() => setActiveTab('rooms')}
+          >
+            Quản lý tin đăng
+          </button>
+          <button
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === 'appointments'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+              }`}
+              onClick={() => setActiveTab('appointments')}
+          >
+            Quản lý lịch xem phòng
+          </button>
+        </div>
       </div>
+
+      {/* MỞ THẺ BỌC DANH SÁCH PHÒNG CŨ */}
+      <div className={activeTab === 'rooms' ? 'block space-y-5' : 'hidden'}>
 
       {loading && <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600">Đang tải dữ liệu...</div>}
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
@@ -1734,6 +1763,8 @@ function MyListingsPage() {
           </div>
         </div>
       )}
+      </div>
+        <LandlordAppointmentsTab isOpen={activeTab === 'appointments'} />
     </section>
   );
 }
@@ -2024,6 +2055,9 @@ function UserProfilePage() {
                 <p className="mt-1 font-semibold text-neutral-800">
                   {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('vi-VN') : 'Chưa xác định'}
                 </p>
+              </div>
+              <div className="col-span-full mt-6">
+                <UserAppointmentsTab />
               </div>
             </div>
 
@@ -4059,6 +4093,10 @@ function RoomDetailPage() {
                 >
                   Xem người đăng
                 </button>
+              </div>
+              {/* === FORM ĐẶT LỊCH XEM PHÒNG === */}
+              <div className="mt-6">
+                <BookingForm roomId={room.id} />
               </div>
             </div>
           </article>

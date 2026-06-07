@@ -15,15 +15,22 @@ import com.pbl3.timtro.notification.service.NotificationService;
 import com.pbl3.timtro.user.entity.User;
 import com.pbl3.timtro.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 
@@ -34,10 +41,25 @@ public class PaymentService {
     private final TurnPurchaseRepository turnPurchaseRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+
     private static final ZoneId APP_ZONE_ID = ZoneId.of("Asia/Ho_Chi_Minh");
-    private final String BANK_ACCOUNT = "525220082006";
-    private final String BANK_NAME = "MB BANK";
-    private final String ACCOUNT_NAME = "TRAN MANH QUYNH";
+    private final String BANK_ACCOUNT = "0944043457";
+    private final String BANK_NAME = "MoMo";
+    private final String ACCOUNT_NAME = "NGUYEN THI KIM NGAN";
+
+    // Cấu hình MoMo lấy từ application.properties
+    @Value("${momo.partner-code}")
+    private String partnerCode;
+    @Value("${momo.access-key}")
+    private String accessKey;
+    @Value("${momo.secret-key}")
+    private String secretKey;
+    @Value("${momo.endpoint}")
+    private String momoEndpoint;
+    @Value("${momo.redirect-url}")
+    private String redirectUrl;
+    @Value("${momo.ipn-url}")
+    private String ipnUrl;
 
     public List<TurnPackageResponse> getAllPackages() {
         return turnPackageRepository.findByActiveTrueOrderByTurnsAsc()
@@ -56,12 +78,12 @@ public class PaymentService {
         }
 
         String transferContent = generateRandomTransferContent();
-        
         // Đảm bảo transferContent là duy nhất
         while (turnPurchaseRepository.findByTransferContent(transferContent).isPresent()) {
             transferContent = generateRandomTransferContent();
         }
 
+        // 1. Lưu thông tin đơn hàng vào Database trước
         TurnPurchase purchase = TurnPurchase.builder()
                 .user(currentUser)
                 .package_info(package_info)
@@ -73,6 +95,60 @@ public class PaymentService {
 
         turnPurchaseRepository.save(purchase);
 
+        // 2. Chuẩn bị dữ liệu gọi API MoMo
+        String orderId = purchase.getId() + "_" + System.currentTimeMillis(); // Cần duy nhất mỗi lần gọi
+        String requestId = orderId;
+        String orderInfo = "Mua " + package_info.getTurns() + " luot dang tin";
+        long amountLong = purchase.getAmount().longValue();
+        String requestType = "captureWallet";
+        String extraData = "";
+
+        // Tạo chuỗi thô để ký (Raw Signature) theo đúng thứ tự Alphabet
+        String rawSignature = "accessKey=" + accessKey +
+                "&amount=" + amountLong +
+                "&extraData=" + extraData +
+                "&ipnUrl=" + ipnUrl +
+                "&orderId=" + orderId +
+                "&orderInfo=" + orderInfo +
+                "&partnerCode=" + partnerCode +
+                "&redirectUrl=" + redirectUrl +
+                "&requestId=" + requestId +
+                "&requestType=" + requestType;
+
+        // Ký thuật toán HMAC SHA256
+        String signature = hmacSha256(rawSignature, secretKey);
+
+        // Tạo Request Body JSON
+        Map<String, Object> momoRequest = new HashMap<>();
+        momoRequest.put("partnerCode", partnerCode);
+        momoRequest.put("partnerName", "TimTro System");
+        momoRequest.put("storeId", "TimTro_Store");
+        momoRequest.put("requestId", requestId);
+        momoRequest.put("amount", amountLong);
+        momoRequest.put("orderId", orderId);
+        momoRequest.put("orderInfo", orderInfo);
+        momoRequest.put("redirectUrl", redirectUrl);
+        momoRequest.put("ipnUrl", ipnUrl);
+        momoRequest.put("lang", "vi");
+        momoRequest.put("extraData", extraData);
+        momoRequest.put("requestType", requestType);
+        momoRequest.put("signature", signature);
+
+        String payUrl = null;
+        try {
+            // Gửi API đến Server MoMo
+            RestTemplate restTemplate = new RestTemplate();
+            Map<String, Object> momoResponse = restTemplate.postForObject(momoEndpoint, momoRequest, Map.class);
+
+            // Lấy đường link thanh toán từ MoMo trả về
+            if (momoResponse != null && momoResponse.containsKey("payUrl")) {
+                payUrl = (String) momoResponse.get("payUrl");
+            }
+        } catch (Exception e) {
+            System.err.println("Lỗi kết nối API MoMo: " + e.getMessage());
+            // Lỗi thì payUrl sẽ là null, Frontend tự động fallback sang phương án chuyển khoản tay
+        }
+
         return CreatePurchaseResponse.builder()
                 .purchaseId(purchase.getId())
                 .turns(purchase.getTurns())
@@ -82,7 +158,25 @@ public class PaymentService {
                 .bankName(BANK_NAME)
                 .status(PurchaseStatus.PENDING)
                 .createdAt(purchase.getCreatedAt())
+                .payUrl(payUrl) // Trả kèm payUrl về cho Frontend React
                 .build();
+    }
+
+    // Thuật toán tạo chữ ký bảo mật cho MoMo
+    private String hmacSha256(String data, String key) {
+        try {
+            SecretKeySpec secretKeySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(secretKeySpec);
+            byte[] rawHmac = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(rawHmac.length * 2);
+            for (byte b : rawHmac) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi tạo chữ ký MoMo", e);
+        }
     }
 
     public List<TurnPurchaseResponse> getUserPurchaseHistory(User currentUser) {
@@ -102,46 +196,43 @@ public class PaymentService {
                 .map(this::convertToPurchaseResponse);
     }
 
-        public Page<TurnPurchaseResponse> getPendingPurchases(LocalDate fromDate, LocalDate toDate, Pageable pageable) {
+    public Page<TurnPurchaseResponse> getPendingPurchases(LocalDate fromDate, LocalDate toDate, Pageable pageable) {
         if (fromDate == null && toDate == null) {
             return getPendingPurchases(pageable);
         }
 
         LocalDateTime start = fromDate != null
-            ? fromDate.atStartOfDay()
-            : LocalDate.of(1970, 1, 1).atStartOfDay();
+                ? fromDate.atStartOfDay()
+                : LocalDate.of(1970, 1, 1).atStartOfDay();
         LocalDateTime end = toDate != null
-            ? toDate.plusDays(1).atStartOfDay()
-            : LocalDateTime.now(APP_ZONE_ID).plusDays(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
+                ? toDate.plusDays(1).atStartOfDay()
+                : LocalDateTime.now(APP_ZONE_ID).plusDays(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
 
         return turnPurchaseRepository.findByStatusAndCreatedAtBetweenOrderByCreatedAtDesc(
-                PurchaseStatus.PENDING,
-                start,
-                end,
-                pageable)
-            .map(this::convertToPurchaseResponse);
-        }
+                        PurchaseStatus.PENDING, start, end, pageable)
+                .map(this::convertToPurchaseResponse);
+    }
 
     public Page<TurnPurchaseResponse> getAllPurchases(Pageable pageable) {
         return turnPurchaseRepository.findAll(pageable)
                 .map(this::convertToPurchaseResponse);
     }
 
-        public Page<TurnPurchaseResponse> getAllPurchases(LocalDate fromDate, LocalDate toDate, Pageable pageable) {
+    public Page<TurnPurchaseResponse> getAllPurchases(LocalDate fromDate, LocalDate toDate, Pageable pageable) {
         if (fromDate == null && toDate == null) {
             return getAllPurchases(pageable);
         }
 
         LocalDateTime start = fromDate != null
-            ? fromDate.atStartOfDay()
-            : LocalDate.of(1970, 1, 1).atStartOfDay();
+                ? fromDate.atStartOfDay()
+                : LocalDate.of(1970, 1, 1).atStartOfDay();
         LocalDateTime end = toDate != null
-            ? toDate.plusDays(1).atStartOfDay()
-            : LocalDateTime.now(APP_ZONE_ID).plusDays(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
+                ? toDate.plusDays(1).atStartOfDay()
+                : LocalDateTime.now(APP_ZONE_ID).plusDays(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
 
         return turnPurchaseRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(start, end, pageable)
-            .map(this::convertToPurchaseResponse);
-        }
+                .map(this::convertToPurchaseResponse);
+    }
 
     @Transactional
     public TurnPurchaseResponse approvePurchase(ApprovePurchaseRequest request, User approverUser) {
@@ -164,7 +255,7 @@ public class PaymentService {
         User user = purchase.getUser();
         user.setPostCredits((user.getPostCredits() != null ? user.getPostCredits() : 0) + purchase.getTurns());
         userRepository.save(user);
-        
+
         turnPurchaseRepository.save(purchase);
 
         return convertToPurchaseResponse(purchase);
@@ -195,12 +286,12 @@ public class PaymentService {
         turnPurchaseRepository.save(purchase);
 
         String packageLabel = purchase.getPackage_info() != null
-            ? purchase.getPackage_info().getTurns() + " lượt"
-            : "đơn mua lượt";
+                ? purchase.getPackage_info().getTurns() + " lượt"
+                : "đơn mua lượt";
         notificationService.sendSystemNotificationToUser(
-            purchase.getUser(),
-            "Yêu cầu mua lượt bị từ chối",
-            "Yêu cầu mua " + packageLabel + " của bạn đã bị từ chối. Lý do: " + rejectionReason
+                purchase.getUser(),
+                "Yêu cầu mua lượt bị từ chối",
+                "Yêu cầu mua " + packageLabel + " của bạn đã bị từ chối. Lý do: " + rejectionReason
         );
 
         return convertToPurchaseResponse(purchase);
